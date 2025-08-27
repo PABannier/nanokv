@@ -9,6 +9,7 @@ use clap::Parser;
 use tokio::sync::Semaphore;
 use tokio::net::TcpListener;
 use axum::{routing::put, Router};
+use tracing::info;
 
 use crate::state::AppState;
 use crate::file_utils::init_dirs;
@@ -54,10 +55,11 @@ async fn main() -> anyhow::Result<()>{
     };
 
     let app = Router::new()
-        .route("/:key", put(put_object).get(get_object).delete(delete_object))
+        .route("/{key}", put(put_object).get(get_object).delete(delete_object))
         .with_state(state);
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await?;
+    info!("listening on {}", args.listen);
+    let listener = TcpListener::bind(args.listen).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
