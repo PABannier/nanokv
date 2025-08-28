@@ -1,7 +1,9 @@
 mod error;
+mod meta;
 mod file_utils;
 mod routes;
 mod state;
+mod kvdb;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,6 +13,7 @@ use tokio::net::TcpListener;
 use axum::{routing::put, Router};
 use tracing::info;
 
+use crate::kvdb::KvDb;
 use crate::state::AppState;
 use crate::file_utils::init_dirs;
 use crate::routes::{delete_object, get_object, put_object};
@@ -21,6 +24,10 @@ struct Args {
     /// Data root directory; will create subdirs {blos,tmp,gc}
     #[arg(long, default_value="./data")]
     data: PathBuf,
+
+    /// RocksDB directory (inside data by default)
+    #[arg(long, default_value="./data/index")]
+    index: PathBuf,
 
     /// Address to listen on
     #[arg(long, default_value = "0.0.0.0:8080")]
@@ -48,10 +55,13 @@ async fn main() -> anyhow::Result<()>{
     let args = Args::parse();
     init_dirs(&args.data).await?;
 
+    let db = KvDb::open(&args.index)?;
+
     let state = AppState {
         data_root: Arc::new(args.data.clone()),
         inflight: Arc::new(Semaphore::new(args.max_inflight)),
         max_size: args.max_size,
+        db,
     };
 
     let app = Router::new()

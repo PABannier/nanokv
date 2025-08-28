@@ -7,7 +7,7 @@ use tokio::fs::File;
 use axum::body::Body;
 use tokio::{
     fs,
-    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
+    io::{AsyncWriteExt},
 };
 use axum::http::HeaderMap;
 use tracing::error;
@@ -23,6 +23,8 @@ const MAX_KEY_LEN: usize = 2048;
 const BLOB_DIR_NAME: &str = "blobs";
 const TMP_DIR_NAME: &str = "tmp";
 const GC_DIR_NAME: &str = "gc";
+
+const META_KEY_PREFIX: &str = "meta";
 
 
 pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {
@@ -116,16 +118,7 @@ pub async fn stream_to_file_with_hash(
     Ok((total, etag))
 }
 
-pub async fn hash_file(file: &mut File) -> Result<String, ApiError> {
-    file.rewind().await?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0u8; 1024 * 1024];
-    loop {
-        let n = file.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[0..n]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
+pub fn meta_key_for(user_key_enc: &str) -> String {
+    // user_key_enc is the percent-encoded file name
+    format!("{}:{}", META_KEY_PREFIX, user_key_enc)
 }

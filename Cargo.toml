@@ -13,8 +13,11 @@ bytes = "1.10.1"
 clap = { version = "4.5.46", features = ["derive"] }
 futures-util = "0.3.31"
 percent-encoding = "2.3.2"
-rocksdb = "0.24.0"
+rocksdb = { version = "0.24.0", default-features = false, features = ["zstd"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
 thiserror = "2.0.16"
+time = "0.3.41"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-util = { version = "0.7.16", features = ["io"] }
 tracing = "0.1.41"
