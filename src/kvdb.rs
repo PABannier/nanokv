@@ -1,5 +1,5 @@
 use std::{path::Path, sync::Arc};
-use rocksdb::{Options, DB};
+use rocksdb::{Options, DB, ReadOptions, IteratorMode};
 use serde::{de::DeserializeOwned, Serialize};
 
 const MAX_OPEN_FILES: i32 = 512;
@@ -41,7 +41,8 @@ impl KvDb {
         Ok(())
     }
 
-    pub fn exists(&self, key: &str) -> anyhow::Result<bool> {
-        Ok(self.inner.get_pinned(key.as_bytes())?.is_some())
+    pub fn iter(&self) -> rocksdb::DBIterator<'_> {
+        let readopts = ReadOptions::default();
+        self.inner.iterator_opt(IteratorMode::Start, readopts)
     }
 }

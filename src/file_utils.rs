@@ -17,14 +17,7 @@ use percent_encoding::{self, percent_encode, NON_ALPHANUMERIC};
 use futures_util::StreamExt;
 
 use crate::error::ApiError;
-
-const MAX_KEY_LEN: usize = 2048;
-
-const BLOB_DIR_NAME: &str = "blobs";
-const TMP_DIR_NAME: &str = "tmp";
-const GC_DIR_NAME: &str = "gc";
-
-const META_KEY_PREFIX: &str = "meta";
+use crate::constants::{MAX_KEY_LEN, BLOB_DIR_NAME, TMP_DIR_NAME, GC_DIR_NAME, META_KEY_PREFIX};
 
 
 pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {

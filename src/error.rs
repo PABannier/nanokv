@@ -11,8 +11,8 @@ pub enum ApiError {
     #[error("not found")]
     KeyNotFound,
     #[error("not enough storage on disk")]
-    InsufficientStorage,
-    #[error("payload too large")]
+    // InsufficientStorage,
+    // #[error("payload too large")]
     TooLarge,
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -25,7 +25,7 @@ impl IntoResponse for ApiError {
         let status_code = match self {
             ApiError::KeyAlreadyExists => StatusCode::CONFLICT,
             ApiError::KeyNotFound => StatusCode::NOT_FOUND,
-            ApiError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
+            // ApiError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
             ApiError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             ApiError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Any(_) => StatusCode::INTERNAL_SERVER_ERROR,

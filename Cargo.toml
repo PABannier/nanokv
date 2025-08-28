@@ -23,3 +23,4 @@ tokio-util = { version = "0.7.16", features = ["io"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
 uuid = { version = "1.18.0", features = ["v4"] }
+walkdir = "2.5.0"
