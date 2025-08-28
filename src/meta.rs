@@ -8,6 +8,16 @@ pub enum TxState {
     Tombstoned   // deleted (logical)
 }
 
+impl ToString for TxState {
+    fn to_string(&self) -> String {
+        match self {
+            TxState::Pending => String::from("Pending"),
+            TxState::Committed  => String::from("Committed"),
+            TxState::Tombstoned  => String::from("Tombstoned"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Meta {
     pub state: TxState,

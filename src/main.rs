@@ -21,7 +21,7 @@ use crate::cleanup::{startup_cleanup, sweep_tmp_orphans};
 use crate::kvdb::KvDb;
 use crate::state::AppState;
 use crate::file_utils::init_dirs;
-use crate::routes::{delete_object, get_object, put_object};
+use crate::routes::{delete_object, get_object, put_object, head_object};
 use crate::verify::verify;
 
 
@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()>{
     };
 
     let app = Router::new()
-        .route("/{key}", put(put_object).get(get_object).delete(delete_object))
+        .route("/{key}", put(put_object).get(get_object).delete(delete_object).head(head_object))
         .with_state(state);
 
     info!("listening on {}", args.listen);

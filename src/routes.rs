@@ -11,7 +11,7 @@ use axum::{
 };
 use anyhow::anyhow;
 
-use crate::{error::ApiError, meta::{Meta, TxState}};
+use crate::{error::ApiError, meta::{self, Meta, TxState}};
 use crate::state::AppState;
 use crate::file_utils::{
     parse_content_length,
@@ -147,4 +147,25 @@ pub async fn delete_object(
     fs::remove_file(&path).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+// HEAD /:key
+pub async fn head_object(
+    Path(raw_key): Path<String>,
+    State(ctx): State<AppState>
+) -> Result<(StatusCode, HeaderMap), ApiError> {
+    let key_enc = sanitize_key(&raw_key)?;
+    let meta_key = meta_key_for(&key_enc);
+
+    let meta = match ctx.db.get::<Meta>(&meta_key)? {
+        None => return Err(ApiError::KeyNotFound),
+        Some(m) => m,
+    };
+
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert("State", HeaderValue::from_str(&meta.state.to_string()).unwrap());
+    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap());
+    resp_headers.insert("Content-Length", HeaderValue::from_str(&meta.size.to_string()).unwrap());
+
+    Ok((StatusCode::OK, resp_headers))
 }
