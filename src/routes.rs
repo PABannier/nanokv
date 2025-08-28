@@ -11,7 +11,7 @@ use axum::{
 };
 use anyhow::anyhow;
 
-use crate::{error::ApiError, meta::{self, Meta, TxState}};
+use crate::{error::ApiError, meta::{Meta, TxState}};
 use crate::state::AppState;
 use crate::file_utils::{
     parse_content_length,
@@ -159,6 +159,7 @@ pub async fn head_object(
 
     let meta = match ctx.db.get::<Meta>(&meta_key)? {
         None => return Err(ApiError::KeyNotFound),
+        Some(m) if m.state == TxState::Tombstoned => return Err(ApiError::KeyNotFound),
         Some(m) => m,
     };
 

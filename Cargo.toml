@@ -13,7 +13,7 @@ bytes = "1.10.1"
 clap = { version = "4.5.46", features = ["derive"] }
 futures-util = "0.3.31"
 percent-encoding = "2.3.2"
-rocksdb = { version = "0.24.0", default-features = false, features = ["zstd"] }
+rocksdb = { version = "0.24.0", default-features = false, features = ["zstd", "lto"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 thiserror = "2.0.16"
@@ -24,3 +24,12 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
 uuid = { version = "1.18.0", features = ["v4"] }
 walkdir = "2.5.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+http-body-util = "0.1"
+tower = "0.5"
+hyper = "1.0"
+hyper-util = "0.1"
+tokio-stream = "0.1"
