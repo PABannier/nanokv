@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TxState { 
+pub enum TxState {
     Pending,     // upload started, not committed
     Committed,   // fully durable and visible
     Tombstoned   // deleted (logical)
@@ -22,9 +22,10 @@ impl ToString for TxState {
 pub struct Meta {
     pub state: TxState,
     pub size: u64,
-    pub etag_hex: String,  // hex blake3
-    pub created_ms: i128,  // epoch ms
-    pub upload_id: Option<String>,  // present during Pending 
+    pub etag_hex: String,           // hex blake3
+    pub created_ms: i128,           // epoch ms
+    pub upload_id: Option<String>,  // present during Pending
+    pub replicas: Vec<String>,      // node_ids
 }
 
 impl Meta {
@@ -35,6 +36,7 @@ impl Meta {
             etag_hex: String::new(),
             created_ms: OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
             upload_id: Some(upload_id),
+            replicas: vec![],
         }
     }
 
@@ -45,6 +47,7 @@ impl Meta {
             etag_hex: etag_hex,
             created_ms: OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
             upload_id: None,
+            replicas: vec![],
         }
     }
 
@@ -55,6 +58,7 @@ impl Meta {
             etag_hex: String::new(),
             created_ms: OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
             upload_id: None,
+            replicas: vec![],
         }
     }
 }

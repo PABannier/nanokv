@@ -1,3 +1,5 @@
+mod cluster;
+mod placement;
 mod cleanup;
 mod constants;
 mod error;
