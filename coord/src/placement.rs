@@ -1,8 +1,29 @@
 use blake3::Hasher;
+use serde::{Serialize, Deserialize};
 
-use crate::cluster::NodeInfo;
 
 const N_TOP_BYTES_FOR_SCORE: usize = 16;
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub node_id: String,              // provided by volume (stable)
+    pub public_url: String,           // e.g. http://host:3001
+    pub internal_url: String,         // same or different port
+    pub subvols: u16,                 // number of disks (for later)
+    pub last_hearbeat_ms: i128,
+    pub capacity_bytes: Option<u64>,  // optional metrics
+    pub used_bytes: Option<u64>,
+    pub status: NodeStatus,
+    pub version: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NodeStatus {
+    Alive,
+    Suspect,
+    Down,
+}
 
 pub fn rank_nodes<'a>(key: &str, nodes: &'a [NodeInfo]) -> Vec<&'a NodeInfo>{
     let mut scored: Vec<(u128, &NodeInfo)> = nodes.iter().map(|n| {

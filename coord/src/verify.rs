@@ -4,10 +4,10 @@ use std::path::Path;
 use walkdir::WalkDir;
 use tracing::info;
 
-use crate::kvdb::KvDb;
-use crate::constants::{META_KEY_PREFIX, BLOB_DIR_NAME};
-use crate::file_utils::blob_path;
-use crate::meta::{TxState, Meta};
+use common::constants::{META_KEY_PREFIX, BLOB_DIR_NAME};
+use common::file_utils::blob_path;
+
+use crate::meta::{KvDb, TxState, Meta};
 
 #[derive(Default)]
 pub struct VerifyReport {

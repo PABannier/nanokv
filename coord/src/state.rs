@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
-use crate::kvdb::KvDb;
+use crate::meta::KvDb;
 
 #[derive(Clone)]
 pub struct AppState {

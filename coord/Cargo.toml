@@ -1,0 +1,42 @@
+[package]
+name = "coord"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "coord"
+path = "src/main.rs"
+
+[lib]
+name = "coord"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0.99"
+common = { path = "../common" }
+axum = { version = "0.8.4", features = ["macros"] }
+blake3 = "1.8.2"
+bytes = "1.10.1"
+clap = { version = "4.5.46", features = ["derive"] }
+futures-util = "0.3.31"
+percent-encoding = "2.3.2"
+rocksdb = { version = "0.24.0", default-features = false, features = ["zstd"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+thiserror = "2.0.16"
+time = "0.3.41"
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-util = { version = "0.7.16", features = ["io"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
+uuid = { version = "1.18.0", features = ["v4"] }
+walkdir = "2.5.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+http-body-util = "0.1"
+tower = "0.5"
+hyper = "1.0"
+hyper-util = "0.1"
+tokio-stream = "0.1"

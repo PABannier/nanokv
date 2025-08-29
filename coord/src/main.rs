@@ -1,13 +1,8 @@
-mod cluster;
 mod placement;
 mod cleanup;
-mod constants;
-mod error;
 mod meta;
-mod file_utils;
 mod routes;
 mod state;
-mod kvdb;
 mod verify;
 
 use std::time::Duration;
@@ -19,10 +14,11 @@ use tokio::net::TcpListener;
 use axum::{routing::put, Router};
 use tracing::info;
 
+use common::file_utils::init_dirs;
+
 use crate::cleanup::{startup_cleanup, sweep_tmp_orphans};
-use crate::kvdb::KvDb;
+use crate::meta::KvDb;
 use crate::state::AppState;
-use crate::file_utils::init_dirs;
 use crate::routes::{delete_object, get_object, put_object, head_object};
 use crate::verify::verify;
 

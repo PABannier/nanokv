@@ -1,4 +1,9 @@
-use nanokv::{AppState, KvDb, init_dirs, Meta, TxState};
+use coord::state::AppState;
+use coord::meta::{KvDb, Meta, TxState};
+use coord::routes;
+use common::file_utils::{blob_path, sanitize_key, meta_key_for, tmp_path};
+use common::file_utils::init_dirs;
+
 use axum::{
     body::Body,
     http::{Request, StatusCode, header},
@@ -32,10 +37,10 @@ async fn create_test_app() -> (Router, TempDir) {
     
     let app = Router::new()
         .route("/{key}", 
-            axum::routing::put(nanokv::routes::put_object)
-                .get(nanokv::routes::get_object)
-                .delete(nanokv::routes::delete_object)
-                .head(nanokv::routes::head_object)
+            axum::routing::put(routes::put_object)
+                .get(routes::get_object)
+                .delete(routes::delete_object)
+                .head(routes::head_object)
         )
         .with_state(state);
     
@@ -131,8 +136,8 @@ async fn test_durability_simulation() {
         
         let app = Router::new()
             .route("/{key}", 
-                axum::routing::put(nanokv::routes::put_object)
-                    .get(nanokv::routes::get_object)
+                axum::routing::put(routes::put_object)
+                    .get(routes::get_object)
             )
             .with_state(state);
         
@@ -172,7 +177,7 @@ async fn test_durability_simulation() {
         
         let app = Router::new()
             .route("/{key}", 
-                axum::routing::get(nanokv::routes::get_object)
+                axum::routing::get(routes::get_object)
             )
             .with_state(state);
         
@@ -257,13 +262,13 @@ async fn test_disk_full_simulation() {
     assert_eq!(put_response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     
     // Verify no partial blob is left
-    let blob_path = nanokv::blob_path(&temp_dir.path(), &nanokv::sanitize_key(key).unwrap());
+    let blob_path = blob_path(&temp_dir.path(), &sanitize_key(key).unwrap());
     assert!(!blob_path.exists());
     
     // Verify no metadata is left
     let index_path = temp_dir.path().join("index");
     let db = KvDb::open(&index_path).unwrap();
-    let meta_key = nanokv::meta_key_for(&nanokv::sanitize_key(key).unwrap());
+    let meta_key = meta_key_for(&sanitize_key(key).unwrap());
     let meta: Option<Meta> = db.get(&meta_key).unwrap();
     assert!(meta.is_none());
 }
@@ -361,8 +366,8 @@ async fn test_pending_cleanup() {
     
     // Manually create a pending upload
     let key = "pending_cleanup_test";
-    let sanitized_key = nanokv::sanitize_key(key).unwrap();
-    let meta_key = nanokv::meta_key_for(&sanitized_key);
+    let sanitized_key = sanitize_key(key).unwrap();
+    let meta_key = meta_key_for(&sanitized_key);
     let upload_id = "test-upload-123";
     
     // Create pending metadata
@@ -370,7 +375,7 @@ async fn test_pending_cleanup() {
     db.put(&meta_key, &pending_meta).unwrap();
     
     // Create a temporary file
-    let tmp_path = nanokv::tmp_path(&data_root, upload_id);
+    let tmp_path = tmp_path(&data_root, upload_id);
     if let Some(parent) = tmp_path.parent() {
         fs::create_dir_all(parent).await.unwrap();
     }

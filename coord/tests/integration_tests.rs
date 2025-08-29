@@ -1,4 +1,9 @@
-use nanokv::{AppState, KvDb, init_dirs};
+use coord::state::AppState;
+use coord::meta::KvDb;
+use coord::routes;
+
+use common::file_utils::init_dirs;
+
 use axum::{
     body::Body,
     http::{Request, StatusCode, header},
@@ -28,10 +33,10 @@ async fn create_test_app() -> (Router, TempDir) {
     
     let app = Router::new()
         .route("/{key}", 
-            axum::routing::put(nanokv::routes::put_object)
-                .get(nanokv::routes::get_object)
-                .delete(nanokv::routes::delete_object)
-                .head(nanokv::routes::head_object)
+            axum::routing::put(routes::put_object)
+                .get(routes::get_object)
+                .delete(routes::delete_object)
+                .head(routes::head_object)
         )
         .with_state(state);
     
