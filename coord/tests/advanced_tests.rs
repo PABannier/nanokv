@@ -1,4 +1,4 @@
-use coord::state::AppState;
+use coord::state::CoordinatorState;
 use coord::meta::{KvDb, Meta, TxState};
 use coord::routes;
 use common::file_utils::{blob_path, sanitize_key, meta_key_for, tmp_path};
@@ -28,7 +28,7 @@ async fn create_test_app() -> (Router, TempDir) {
     let index_path = data_root.join("index");
     let db = KvDb::open(&index_path).unwrap();
     
-    let state = AppState {
+    let state = CoordinatorState {
         data_root: Arc::new(data_root),
         inflight: Arc::new(Semaphore::new(4)),
         max_size: 1024 * 1024 * 1024, // 1GB

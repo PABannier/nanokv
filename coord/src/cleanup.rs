@@ -1,16 +1,16 @@
 use std::time::Duration;
 use std::path::Path;
 use std::collections::HashSet;
-use time::OffsetDateTime;
 use tracing::info;
 
 use common::file_utils::tmp_path;
 use common::constants::{META_KEY_PREFIX, TMP_DIR_NAME};
+use common::time_utils::utc_now_ms;
 
 use crate::meta::{Meta, TxState, KvDb};
 
 pub async fn startup_cleanup(data_root: &Path, db: &KvDb, grace: Duration) -> anyhow::Result<()> {
-    let now_ms = OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    let now_ms = utc_now_ms();
     let cutoff_ms = now_ms - (grace.as_millis() as i128);
 
     let mut cleaned_meta = 0usize;

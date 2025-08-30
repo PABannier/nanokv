@@ -1,7 +1,8 @@
 use std::{path::Path, sync::Arc};
 use rocksdb::{Options, DB, ReadOptions, IteratorMode};
 use serde::{de::DeserializeOwned, Serialize, Deserialize};
-use time::OffsetDateTime;
+
+use common::time_utils::utc_now_ms;
 
 const MAX_OPEN_FILES: i32 = 512;
 
@@ -76,25 +77,25 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub fn pending(upload_id: String) -> Self {
+    pub fn pending(upload_id: String, replicas: Vec<String>) -> Self {
         Self {
             state: TxState::Pending,
             size: 0,
             etag_hex: String::new(),
-            created_ms: OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
+            created_ms: utc_now_ms(),
             upload_id: Some(upload_id),
-            replicas: vec![],
+            replicas: replicas,
         }
     }
 
-    pub fn committed(size: u64, etag_hex: String) -> Self {
+    pub fn committed(size: u64, etag_hex: String, replicas: Vec<String>) -> Self {
         Self {
             state: TxState::Committed,
             size: size,
             etag_hex: etag_hex,
-            created_ms: OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
+            created_ms: utc_now_ms(),
             upload_id: None,
-            replicas: vec![],
+            replicas: replicas,
         }
     }
 
@@ -103,7 +104,7 @@ impl Meta {
             state: TxState::Tombstoned,
             size: 0,
             etag_hex: String::new(),
-            created_ms: OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
+            created_ms: utc_now_ms(),
             upload_id: None,
             replicas: vec![],
         }

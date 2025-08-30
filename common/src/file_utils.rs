@@ -16,7 +16,7 @@ use anyhow;
 use percent_encoding::{self, percent_encode, NON_ALPHANUMERIC};
 use futures_util::StreamExt;
 
-use crate::error::ApiError;
+use crate::api_error::ApiError;
 use crate::constants::{MAX_KEY_LEN, BLOB_DIR_NAME, TMP_DIR_NAME, GC_DIR_NAME, META_KEY_PREFIX};
 
 
@@ -79,7 +79,6 @@ pub async fn fsync_dir(dir: &Path) -> io::Result<()> {
 pub async fn stream_to_file_with_hash(
     body: Body,
     file: &mut File,
-    max_size: u64,
 ) -> Result<(u64, String), ApiError> {
     let mut hasher = blake3::Hasher::new();
     let mut total: u64 = 0;
@@ -91,21 +90,17 @@ pub async fn stream_to_file_with_hash(
             error!("body error: {e}");
             ApiError::Any(anyhow::anyhow!("bad request body"))
         })?;
-        
+
         total = total
             .checked_add(chunk.len() as u64)
             .ok_or(ApiError::TooLarge)?;
-
-        if total > max_size {
-            return Err(ApiError::TooLarge);
-        }
 
         hasher.update(&chunk);
         file.write_all(&chunk).await?;
     }
 
     file.flush().await?;
-    
+
     let etag = hasher.finalize().to_hex().to_string();
 
     Ok((total, etag))

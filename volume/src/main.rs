@@ -1,3 +1,180 @@
-fn main() {
-    println!("Hello, world!");
+use axum::{routing::{put, get, delete}, Router};
+use axum_server::Server;
+use tokio::time::Duration;
+use clap::{Parser};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tracing::{info, warn};
+
+use common::file_utils::init_dirs;
+use common::schemas::{JoinRequest, HeartbeatRequest};
+
+use volume::state::VolumeState;
+use volume::routes::{put_object, get_object, delete_object};
+use volume::disk::disk_usage;
+
+#[derive(Parser, Debug, Clone)]
+#[command(version, about)]
+struct Args {
+    #[arg(long, default_value="./data")]
+    data: PathBuf,
+    #[arg(long)]
+    coordinator_url: String,
+    #[arg(long, default_value = "vol-1")]
+    node_id: String,
+    #[arg(long, default_value = "http://127.0.0.1:3001")]
+    public_url: String,
+    #[arg(long, default_value = "http://127.0.0.1:3001")]
+    internal_url: String,
+    #[arg(long, default_value_t = 1)]
+    subvols: u16,
+    #[arg(long, default_value_t = 1)]
+    heartbeat_interval_secs: u64,
+    #[arg(long, default_value_t = 5)]
+    http_timeout_secs: u64,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .with_target(false)
+        .compact()
+        .init();
+
+    let args = Args::parse();
+    init_dirs(&args.data).await?;
+
+    let http_client = reqwest::Client::builder()
+        .pool_idle_timeout(Duration::from_secs(30))
+        .tcp_keepalive(Duration::from_secs(30))
+        .http2_adaptive_window(true)
+        .timeout(Duration::from_secs(args.http_timeout_secs))
+        .build()?;
+
+    let state = VolumeState {
+        http_client,
+        data_root: Arc::new(args.data.clone()),
+        coordinator_url: args.coordinator_url,
+        node_id: args.node_id,
+        public_url: args.public_url.clone(),
+        internal_url: args.internal_url,
+        subvols: args.subvols,
+        heartbeat_interval_secs: args.heartbeat_interval_secs,
+        http_timeout_secs: args.http_timeout_secs,
+    };
+
+    join_cluster(&state).await?;
+
+    // Spawn heartbeat loop with shutdown signal
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel::<bool>(false);
+    let hb_handle = tokio::spawn(heartbeat_loop(
+        state.clone(),
+        Duration::from_secs(args.heartbeat_interval_secs),
+        shutdown_rx,
+    ));
+
+    let app = Router::new()
+        .route("/blobs/{key}", get(get_object))
+        .route("/internal/object/{key}", put(put_object))
+        .route("/internal/delete/{key}", delete(delete_object))
+        .with_state(state);
+
+    info!("listening on {}", args.public_url);
+    let server = Server::bind(args.public_url.parse()?)
+        .serve(app.into_make_service());
+
+    // Graceful shutdown: ctrl+c
+    tokio::select! {
+        res = server => { res?; }
+        _ = tokio::signal::ctrl_c() => {}
+    }
+
+    // Stop heartbeat
+    let _ = shutdown_tx.send(true);
+    let _ = hb_handle.await;
+
+    Ok(())
+}
+
+async fn join_cluster(state: &VolumeState) -> anyhow::Result<()> {
+    let (used, cap) = disk_usage(&state.data_root)?;
+
+    let payload = JoinRequest {
+        node_id: state.node_id.clone(),
+        public_url: state.public_url.clone(),
+        internal_url: state.internal_url.clone(),
+        subvols: state.subvols,
+        capacity_bytes: cap,
+        used_bytes: used,
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+    };
+
+    let url = format!("{}/admin/join", state.coordinator_url);
+    let req = state.http_client.post(url).json(&payload);
+
+    let resp = req.send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("join failed: {}", resp.status());
+    }
+
+    info!("joined coordinator as {}", state.node_id);
+
+    Ok(())
+}
+
+
+async fn heartbeat_loop(
+    state: VolumeState,
+    interval: std::time::Duration,
+    mut shutdown: tokio::sync::watch::Receiver<bool>
+) -> anyhow::Result<()> {
+    let url = format!("{}/admin/heartbeat", state.coordinator_url);
+    let mut tick = tokio::time::interval(interval);
+    let mut backoff = Duration::from_secs(1);
+
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {},
+            _ = shutdown.changed() => { if *shutdown.borrow() { break; } }
+        }
+
+        let (used, cap) = match disk_usage(&state.data_root) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("disk_usage error: {e:#}");
+                (None, None)
+            }
+        };
+
+        let hb = HeartbeatRequest {
+            node_id: state.node_id.clone(),
+            used_bytes: used,
+            capacity_bytes: cap,
+        };
+
+        let req = state.http_client.post(&url).json(&hb);
+
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                backoff = interval; // reset backoff on success
+            }
+            Ok(resp) => {
+                warn!("heartbeat non-200: {}", resp.status());
+            }
+            Err(e) => {
+                warn!("heartbeat error: {e}");
+            }
+        }
+
+        // simple backoff on repeated failures (cap at 30s)
+        if backoff > interval {
+            tokio::time::sleep(backoff).await;
+            backoff = (backoff.mul_f32(1.5)).min(Duration::from_secs(30));
+        }
+    }
+
+    info!("heartbeat loop stopped");
+
+    Ok(())
 }

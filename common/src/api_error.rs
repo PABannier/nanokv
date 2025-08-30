@@ -10,10 +10,12 @@ pub enum ApiError {
     KeyAlreadyExists,
     #[error("not found")]
     KeyNotFound,
-    #[error("not enough storage on disk")]
+    // #[error("not enough storage on disk")]
     // InsufficientStorage,
-    // #[error("payload too large")]
+    #[error("payload too large")]
     TooLarge,
+    #[error("unknown node")]
+    UnknownNode,
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]
@@ -27,6 +29,7 @@ impl IntoResponse for ApiError {
             ApiError::KeyNotFound => StatusCode::NOT_FOUND,
             // ApiError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
             ApiError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            ApiError::UnknownNode => StatusCode::NOT_FOUND,
             ApiError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Any(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
