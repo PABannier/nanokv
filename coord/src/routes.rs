@@ -72,7 +72,7 @@ pub async fn put_object(
         .map_err(|e| ApiError::Any(anyhow!("failed to stream to node: {}", e)));
     let upstream_body = reqwest::Body::wrap_stream(stream);
 
-    let vol_url = format!("{}/internal/object/{}", node.internal_url, key_enc);
+    let vol_url = format!("{}/internal/object/{}", node.internal_url.trim_end_matches('/'), key_enc);
 
     let mut req = ctx.http_client.put(&vol_url).header("X-Upload-Id", &upload_id);
 
@@ -123,7 +123,7 @@ pub async fn get_object(
     let vol_url = {
         let nodes = ctx.nodes.read().map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?;
         let node = nodes.get(node_id).ok_or_else(|| ApiError::Any(anyhow!("node not found")))?;
-        format!("{}/blobs/{}", node.info.public_url, key_enc)
+        format!("{}/blobs/{}", node.info.public_url.trim_end_matches('/'), key_enc)
     };
 
     let mut resp_headers = HeaderMap::new();
@@ -160,7 +160,7 @@ pub async fn delete_object(
     let vol_url = {
         let nodes = ctx.nodes.read().map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?;
         let node = nodes.get(node_id).ok_or_else(|| ApiError::Any(anyhow!("node not found")))?;
-        format!("{}/internal/delete/{}", node.info.internal_url, key_enc)
+        format!("{}/internal/delete/{}", node.info.internal_url.trim_end_matches('/'), key_enc)
     };
 
     let req = ctx.http_client.delete(&vol_url);

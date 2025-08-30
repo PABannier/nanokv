@@ -35,6 +35,30 @@ walkdir = "2.5.0"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "http2", "json"] }
 
 
+[[test]]
+name = "join_and_nodes"
+path = "../tests/join_and_nodes.rs"
+
+[[test]]
+name = "placement"
+path = "../tests/placement.rs"
+
+[[test]]
+name = "io_happy_path"
+path = "../tests/io_happy_path.rs"
+
+[[test]]
+name = "write_once"
+path = "../tests/write_once.rs"
+
+[[test]]
+name = "node_down"
+path = "../tests/node_down.rs"
+
+[[test]]
+name = "delete_idempotent"
+path = "../tests/delete_idempotent.rs"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"
@@ -43,3 +67,4 @@ tower = "0.5"
 hyper = "1.0"
 hyper-util = "0.1"
 tokio-stream = "0.1"
+volume = { path = "../volume" }

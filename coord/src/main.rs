@@ -16,8 +16,7 @@ use coord::node::{NodeInfo, NodeRuntime};
 use coord::state::CoordinatorState;
 use coord::health::{startup_cleanup, sweep_tmp_orphans, node_status_sweeper};
 use coord::meta::KvDb;
-use coord::routes::{delete_object, get_object, put_object, head_object, list_nodes, join_node};
-use coord::verify::verify;
+use coord::routes::{delete_object, get_object, put_object, head_object, list_nodes, join_node, heartbeat};
 
 
 #[derive(Parser, Debug, Clone)]
@@ -71,8 +70,6 @@ struct Args {
 enum Cmd {
     /// Run the HTTP server
     Serve,
-    /// Verify blobs vs RocksDB (optionally deep hash)
-    Verify,
 }
 
 
@@ -90,12 +87,6 @@ async fn main() -> anyhow::Result<()>{
     let db = KvDb::open(&args.index)?;
 
     match args.cmd {
-        Cmd::Verify => {
-            let report = verify(&args.data, &db, args.deep_verify).await?;
-            report.print();
-            if report.has_issues() { std::process::exit(2); }
-            return Ok(())
-        },
         Cmd::Serve => {
             // Cleanup before serving
             startup_cleanup(&args.data, &db, Duration::from_secs(args.pending_grace_secs)).await?;
@@ -128,6 +119,7 @@ async fn main() -> anyhow::Result<()>{
         .route("/{key}", put(put_object).get(get_object).delete(delete_object).head(head_object))
         .route("/admin/nodes", get(list_nodes))
         .route("/admin/join", post(join_node))
+        .route("/admin/heartbeat", post(heartbeat))
         .with_state(state.clone());
 
     info!("listening on {}", args.listen);
