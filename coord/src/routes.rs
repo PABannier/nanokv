@@ -126,23 +126,12 @@ pub async fn get_object(
         format!("{}/blobs/{}", node.info.public_url, key_enc)
     };
 
-    let req = ctx.http_client.get(&vol_url);
-    let resp = req.send().await.map_err(|e| ApiError::Any(anyhow!("failed to send request to volume: {}", e)))?;
-
-    if !resp.status().is_success() {
-        return Err(ApiError::Any(anyhow!("failed to get object. Volume replied: {}", resp.status())));
-    }
-
-    // Convert the reqwest response body to axum body stream
-    let stream = resp.bytes_stream()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-    let body = Body::from_stream(stream);
-
     let mut resp_headers = HeaderMap::new();
+    resp_headers.insert("Location", HeaderValue::from_str(&vol_url).unwrap());
     resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap());
     resp_headers.insert("Content-Length", HeaderValue::from_str(&meta.size.to_string()).unwrap());
 
-    Ok((StatusCode::OK, resp_headers, body).into_response())
+    Ok((StatusCode::FOUND, resp_headers).into_response())
 }
 
 // DELETE /:key
