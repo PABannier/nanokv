@@ -4,14 +4,15 @@ use tokio::time::Duration;
 use clap::{Parser};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 use common::file_utils::init_dirs;
-use common::schemas::{JoinRequest, HeartbeatRequest};
+use common::schemas::JoinRequest;
 
 use volume::state::VolumeState;
 use volume::routes::{put_object, get_object, delete_object};
-use volume::disk::disk_usage;
+use volume::store::disk_usage;
+use volume::health::heartbeat_loop;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about)]
@@ -119,62 +120,6 @@ async fn join_cluster(state: &VolumeState) -> anyhow::Result<()> {
     }
 
     info!("joined coordinator as {}", state.node_id);
-
-    Ok(())
-}
-
-
-async fn heartbeat_loop(
-    state: VolumeState,
-    interval: std::time::Duration,
-    mut shutdown: tokio::sync::watch::Receiver<bool>
-) -> anyhow::Result<()> {
-    let url = format!("{}/admin/heartbeat", state.coordinator_url);
-    let mut tick = tokio::time::interval(interval);
-    let mut backoff = Duration::from_secs(1);
-
-    loop {
-        tokio::select! {
-            _ = tick.tick() => {},
-            _ = shutdown.changed() => { if *shutdown.borrow() { break; } }
-        }
-
-        let (used, cap) = match disk_usage(&state.data_root) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("disk_usage error: {e:#}");
-                (None, None)
-            }
-        };
-
-        let hb = HeartbeatRequest {
-            node_id: state.node_id.clone(),
-            used_bytes: used,
-            capacity_bytes: cap,
-        };
-
-        let req = state.http_client.post(&url).json(&hb);
-
-        match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                backoff = interval; // reset backoff on success
-            }
-            Ok(resp) => {
-                warn!("heartbeat non-200: {}", resp.status());
-            }
-            Err(e) => {
-                warn!("heartbeat error: {e}");
-            }
-        }
-
-        // simple backoff on repeated failures (cap at 30s)
-        if backoff > interval {
-            tokio::time::sleep(backoff).await;
-            backoff = (backoff.mul_f32(1.5)).min(Duration::from_secs(30));
-        }
-    }
-
-    info!("heartbeat loop stopped");
 
     Ok(())
 }

@@ -1,10 +1,16 @@
 use std::time::Duration;
 use std::path::Path;
 use std::collections::HashSet;
-use tracing::info;
+use tracing::{info, error};
+use tokio::sync::watch;
+
+use std::time::Instant;
+
+use crate::node::NodeStatus;
+use crate::state::CoordinatorState;
 
 use common::file_utils::tmp_path;
-use common::constants::{META_KEY_PREFIX, TMP_DIR_NAME};
+use common::constants::{META_KEY_PREFIX, TMP_DIR_NAME, NODE_KEY_PREFIX};
 use common::time_utils::utc_now_ms;
 
 use crate::meta::{Meta, TxState, KvDb};
@@ -76,4 +82,48 @@ pub async fn sweep_tmp_orphans(data_root: &Path, db: &KvDb) -> anyhow::Result<()
 
 fn file_exists_sync(path: &Path) -> bool {
     std::fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+}
+
+pub async fn node_status_sweeper(
+    state: CoordinatorState, 
+    interval: std::time::Duration,
+    mut shutdown: watch::Receiver<bool>
+) -> anyhow::Result<()> {
+    let mut tick = tokio::time::interval(interval);
+
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {},
+            _ = shutdown.changed() => { if *shutdown.borrow() { break; }}
+        }
+
+        let mut nodes = match state.nodes.write() {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                error!("failed to acquire nodes lock: {}", e);
+                continue;
+            }
+        };
+
+        let now = Instant::now();
+
+        for node in nodes.values_mut() {
+            let elapsed = now.saturating_duration_since(node.last_seen);
+            let new_status = if elapsed <= Duration::from_secs(state.hb_alive_secs) {
+                NodeStatus::Alive
+            } else if elapsed <= Duration::from_secs(state.hb_down_secs) {
+                NodeStatus::Suspect
+            } else {
+                NodeStatus::Down
+            };
+            if new_status != node.info.status {
+                node.info.status = new_status;
+                state.db.put(&format!("{}:{}", NODE_KEY_PREFIX, node.info.node_id), &node.info)?;
+            }
+        }
+    }
+
+    info!("node status sweeper stopped");
+
+    Ok(())
 }

@@ -8,13 +8,13 @@ use tokio::sync::Semaphore;
 use tokio::sync::watch;
 use axum::{routing::{put, get, post}, Router};
 use axum_server::Server;
-use tracing::{info, error};
+use tracing::info;
 
 use common::file_utils::init_dirs;
 
-use coord::node::{NodeInfo, NodeRuntime, NodeStatus};
+use coord::node::{NodeInfo, NodeRuntime};
 use coord::state::CoordinatorState;
-use coord::cleanup::{startup_cleanup, sweep_tmp_orphans};
+use coord::health::{startup_cleanup, sweep_tmp_orphans, node_status_sweeper};
 use coord::meta::KvDb;
 use coord::routes::{delete_object, get_object, put_object, head_object, list_nodes, join_node};
 use coord::verify::verify;
@@ -159,48 +159,4 @@ fn read_node_infos_from_db(db: &KvDb) -> anyhow::Result<HashMap<String, NodeRunt
         });
     }
     Ok(nodes)
-}
-
-async fn node_status_sweeper(
-    state: CoordinatorState, 
-    interval: std::time::Duration,
-    mut shutdown: watch::Receiver<bool>
-) -> anyhow::Result<()> {
-    let mut tick = tokio::time::interval(interval);
-
-    loop {
-        tokio::select! {
-            _ = tick.tick() => {},
-            _ = shutdown.changed() => { if *shutdown.borrow() { break; }}
-        }
-
-        let mut nodes = match state.nodes.write() {
-            Ok(nodes) => nodes,
-            Err(e) => {
-                error!("failed to acquire nodes lock: {}", e);
-                continue;
-            }
-        };
-
-        let now = Instant::now();
-
-        for node in nodes.values_mut() {
-            let elapsed = now.saturating_duration_since(node.last_seen);
-            let new_status = if elapsed <= Duration::from_secs(state.hb_alive_secs) {
-                NodeStatus::Alive
-            } else if elapsed <= Duration::from_secs(state.hb_down_secs) {
-                NodeStatus::Suspect
-            } else {
-                NodeStatus::Down
-            };
-            if new_status != node.info.status {
-                node.info.status = new_status;
-                state.db.put(&format!("{}:{}", NODE_KEY_PREFIX, node.info.node_id), &node.info)?;
-            }
-        }
-    }
-
-    info!("node status sweeper stopped");
-
-    Ok(())
 }
