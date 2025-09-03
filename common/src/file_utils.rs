@@ -4,7 +4,6 @@ use std::{
 };
 use bytes::Bytes;
 use tokio::fs::File;
-use axum::body::Body;
 use tokio::{
     fs,
     io::{AsyncWriteExt},
@@ -76,19 +75,21 @@ pub async fn fsync_dir(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn stream_to_file_with_hash(
-    body: Body,
+pub async fn stream_to_file_with_hash<S, E>(
+    mut stream: S,
     file: &mut File,
-) -> Result<(u64, String), ApiError> {
+) -> Result<(u64, String), ApiError>
+where
+    S: futures_util::Stream<Item = Result<Bytes, E>> + Unpin,
+    E: std::error::Error + Send + Sync + 'static,
+{
     let mut hasher = blake3::Hasher::new();
     let mut total: u64 = 0;
 
-    let mut stream = body.into_data_stream();
-
     while let Some(next) = stream.next().await {
         let chunk: Bytes = next.map_err(|e| {
-            error!("body error: {e}");
-            ApiError::Any(anyhow::anyhow!("bad request body"))
+            error!("stream error: {e}");
+            ApiError::Any(anyhow::anyhow!("stream error"))
         })?;
 
         total = total

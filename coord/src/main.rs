@@ -42,6 +42,10 @@ struct Args {
     #[arg(long, default_value_t = 1024 * 1024 * 1024u64)]
     max_size: u64,
 
+    /// Number of replicas
+    #[arg(long, default_value_t = 3)]
+    n_replicas: usize,
+
     /// Heartbeat alive timeout (seconds)
     #[arg(long, default_value_t = 5)]
     hb_alive_secs: u64,
@@ -101,6 +105,7 @@ async fn main() -> anyhow::Result<()>{
         inflight: Arc::new(Semaphore::new(args.max_inflight)),
         nodes: Arc::new(RwLock::new(nodes)),
         db,
+        n_replicas: args.n_replicas,
         max_size: args.max_size,
         hb_alive_secs: args.hb_alive_secs,
         hb_down_secs: args.hb_down_secs,

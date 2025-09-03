@@ -33,31 +33,10 @@ tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
 uuid = { version = "1.18.0", features = ["v4"] }
 walkdir = "2.5.0"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "http2", "json"] }
+rand = "0.9.2"
 
 
-[[test]]
-name = "join_and_nodes"
-path = "../tests/join_and_nodes.rs"
-
-[[test]]
-name = "placement"
-path = "../tests/placement.rs"
-
-[[test]]
-name = "io_happy_path"
-path = "../tests/io_happy_path.rs"
-
-[[test]]
-name = "write_once"
-path = "../tests/write_once.rs"
-
-[[test]]
-name = "node_down"
-path = "../tests/node_down.rs"
-
-[[test]]
-name = "delete_idempotent"
-path = "../tests/delete_idempotent.rs"
+# Integration tests are auto-discovered in tests/ directory
 
 [dev-dependencies]
 tokio-test = "0.4"

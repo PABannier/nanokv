@@ -15,6 +15,7 @@ pub struct CoordinatorState {
     pub db: KvDb,
     pub nodes: Arc<RwLock<HashMap<String, NodeRuntime>>>,
 
+    pub n_replicas: usize,
     pub hb_alive_secs: u64,
     pub hb_down_secs: u64,
     pub node_status_sweep_secs: u64,

@@ -23,6 +23,9 @@ pub fn sanitize_url(url: &str) -> anyhow::Result<String> {
         other => return Err(anyhow!("Unsupported URL scheme: {}", other)),
     }
 
+    let url_str = parsed_url.to_string();
+    let trimmed = url_str.trim_end_matches('/');
+
     // Return the normalized URL string
-    Ok(parsed_url.to_string())
+    Ok(trimmed.to_string())
 }

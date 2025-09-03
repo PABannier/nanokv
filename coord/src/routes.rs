@@ -1,106 +1,89 @@
-use std::time::Instant;
-use uuid::Uuid;
+use std::time::{Instant};
 use axum::{
     body::Body,
     extract::{Path, State, Json},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
+use futures_util::future::try_join_all;
 use anyhow::anyhow;
-use futures_util::TryStreamExt;
 
-use common::schemas::{JoinRequest, HeartbeatRequest, PutResponse};
+use common::schemas::{JoinRequest, HeartbeatRequest};
 use common::time_utils::utc_now_ms;
 use common::constants::NODE_KEY_PREFIX;
 use common::api_error::ApiError;
 use common::url_utils::sanitize_url;
 use common::file_utils::{
-    parse_content_length,
     sanitize_key,
     meta_key_for,
 };
+use common::file_utils::parse_content_length;
 
+use crate::op::{meta, prepare, guard::AbortGuard, write, pull, commit};
 use crate::node::{NodeInfo, NodeStatus, NodeRuntime};
 use crate::state::CoordinatorState;
 use crate::meta::{Meta, TxState};
-use crate::placement::{alive_nodes_for_placement, rank_nodes};
+use crate::placement::{
+    choose_top_n_alive,
+    get_volume_url_for_key,
+    get_all_volume_urls_for_key
+};
 
 
 // PUT /:key
+/// A PUT request to create or replace an object, orchestrated in a 2 phase commit.
 pub async fn put_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
     headers: HeaderMap,
     body: Body,
 ) -> Result<(StatusCode, HeaderMap), ApiError> {
+    // Sanity checks
     let key_enc = sanitize_key(&raw_key)?;
+
     let meta_key = meta_key_for(&key_enc);
+    ensure_write_once(&ctx, &meta_key)?;
 
-    // Enforce write-once: conflict if Committed or Pending already exists
-    if let Some(existing) = ctx.db.get::<Meta>(&meta_key)? {
-        match existing.state {
-            TxState::Committed => return Err(ApiError::KeyAlreadyExists),
-            TxState::Pending => return Err(ApiError::KeyAlreadyExists),
-            TxState::Tombstoned => return Err(ApiError::KeyAlreadyExists),
-        }
-    }
+    content_length_check(&headers, ctx.max_size)?;
 
-    // Optional content-length check (helps enforce max_size early)
-    let content_length = parse_content_length(&headers);
-    if let Some(len) = content_length {
-        if len > ctx.max_size {
-            return Err(ApiError::TooLarge);
-        }
-    }
-
-    // Select a node for placement
-    let alive_nodes = alive_nodes_for_placement(&ctx)?;
-
-    let ranked_nodes = rank_nodes(&key_enc, &alive_nodes);
-    let node = ranked_nodes.first().ok_or_else(|| ApiError::Any(anyhow!("no nodes available for placement")))?;
+    // Find replicas
+    let replicas = choose_top_n_alive(&ctx, &key_enc, ctx.n_replicas)?;
+    if replicas.len() < ctx.n_replicas { return Err(ApiError::NoQuorum); }
 
     // Declare an inflight upload
     let _permit = ctx.inflight.acquire().await.unwrap();
-    let upload_id = Uuid::new_v4().to_string();
 
-    // Record Pending in RocksDB
-    ctx.db.put(&meta_key, &Meta::pending(upload_id.clone(), vec![node.internal_url.clone()]))?;
+    // Write pending transaction in DB
+    let upload_id = meta::write_pending_meta(&ctx, &meta_key, &replicas)?;
 
-    // Stream to the volume node
-    let stream = body
-        .into_data_stream()
-        .map_err(|e| ApiError::Any(anyhow!("failed to stream to node: {}", e)));
-    let upstream_body = reqwest::Body::wrap_stream(stream);
+    // Abort guard (abort on failure if dropped before disarmed)
+    let mut guard = AbortGuard::new(&ctx, &replicas, upload_id.clone());
 
-    let vol_url = format!("{}/internal/object/{}", node.internal_url.trim_end_matches('/'), key_enc);
+    // Prepare all replicas with a retry
+    prepare::retry_prepare_all(&ctx, &replicas, &key_enc, &upload_id).await?;
 
-    let mut req = ctx.http_client.put(&vol_url).header("X-Upload-Id", &upload_id);
+    // Write to the head node (single-shot; long timeout). If this fails, abort.
+    let head = replicas.first().unwrap();
+    let (size, etag) = write::write_to_head_single_shot(&ctx, head, body, &upload_id).await?;
 
-    if let Some(len) = content_length {
-        req = req.header("Content-Length", len.to_string());
-    }
+    // Pull all from head with a retry
+    pull::retry_pull_all(&ctx, head, &replicas[1..], &upload_id, size, &etag).await?;
 
-    let resp = req
-        .body(upstream_body)
-        .send()
-        .await
-        .map_err(|e| ApiError::Any(anyhow!("failed to stream to node: {}", e)))?;
+    // At this point, all replicas have the data in temporary files. We can disarm the
+    // guard. If the commit fails, a verify or clean operation will clean up the temporary
+    // files.
+    guard.disarm();
 
-    if !resp.status().is_success() {
-        // TODO: clear pending upload
-        return Err(ApiError::Any(anyhow!("failed to stream to node. Volume replied: {}", resp.status())));
-    }
+    // Commit
+    commit::retry_commit_all(&ctx, &replicas, &upload_id, &key_enc).await?;
 
-    let put_resp: PutResponse = resp.json::<PutResponse>().await
-        .map_err(|e| ApiError::Any(anyhow!("failed to parse volume put response: {}", e)))?;
-
-    let replicas = vec![node.node_id.clone()];
-    ctx.db.put(&meta_key, &Meta::committed(put_resp.size, put_resp.etag.clone(), replicas))?;
+    // Write committed transaction in DB
+    meta::write_committed_meta(&ctx, &meta_key, size, etag.clone(), &replicas)?;
 
     // Build response headers
     let mut resp_headers = HeaderMap::new();
-    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", put_resp.etag)).unwrap());
-    resp_headers.insert("Content-Length", HeaderValue::from_str(&put_resp.size.to_string()).unwrap());
+    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap());
+    resp_headers.insert("Content-Length", HeaderValue::from_str(&size.to_string()).unwrap());
 
     Ok((StatusCode::CREATED, resp_headers))
 }
@@ -119,15 +102,11 @@ pub async fn get_object(
         _ => return Err(ApiError::KeyNotFound),
     };
 
-    let node_id = meta.replicas.first().ok_or_else(|| ApiError::Any(anyhow!("no replicas found")))?;
-    let vol_url = {
-        let nodes = ctx.nodes.read().map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?;
-        let node = nodes.get(node_id).ok_or_else(|| ApiError::Any(anyhow!("node not found")))?;
-        format!("{}/blobs/{}", node.info.public_url.trim_end_matches('/'), key_enc)
-    };
+    let volume_url = get_volume_url_for_key(&ctx, &meta)?;
+    let volume_url_for_key = format!("{}/blobs/{}", volume_url, key_enc);
 
     let mut resp_headers = HeaderMap::new();
-    resp_headers.insert("Location", HeaderValue::from_str(&vol_url).unwrap());
+    resp_headers.insert("Location", HeaderValue::from_str(&volume_url_for_key).unwrap());
     resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap());
     resp_headers.insert("Content-Length", HeaderValue::from_str(&meta.size.to_string()).unwrap());
 
@@ -135,6 +114,20 @@ pub async fn get_object(
 }
 
 // DELETE /:key
+async fn delete_object_on_volume(ctx: &CoordinatorState, vol_url: &str) -> Result<StatusCode, ApiError> {
+    let req = ctx.http_client.delete(vol_url);
+
+    let res = req.send()
+        .await
+        .map_err(|e| ApiError::Any(anyhow!("failed to send request to volume: {}", e)))?;
+
+    if !res.status().is_success() {
+        return Err(ApiError::Any(anyhow!("failed to delete object. Volume replied: {}", res.status())));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn delete_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>
@@ -152,22 +145,25 @@ pub async fn delete_object(
         Some(m) => m,
     };
 
-    // Remove entry from KvDB
     ctx.db.put(&meta_key, &Meta::tombstoned())?;
 
-    // Send a request to the volume node to delete the object
-    let node_id = existing.replicas.first().ok_or_else(|| ApiError::Any(anyhow!("no replicas found")))?;
-    let vol_url = {
-        let nodes = ctx.nodes.read().map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?;
-        let node = nodes.get(node_id).ok_or_else(|| ApiError::Any(anyhow!("node not found")))?;
-        format!("{}/internal/delete/{}", node.info.internal_url.trim_end_matches('/'), key_enc)
-    };
+    let volume_urls = get_all_volume_urls_for_key(&ctx, &existing)?;
 
-    let req = ctx.http_client.delete(&vol_url);
-    let resp = req.send().await.map_err(|e| ApiError::Any(anyhow!("failed to send request to volume: {}", e)))?;
+    let volume_urls_for_key = volume_urls
+        .iter()
+        .map(|url| format!("{}/internal/delete/{}", url, key_enc))
+        .collect::<Vec<_>>();
 
-    if !resp.status().is_success() {
-        return Err(ApiError::Any(anyhow!("failed to delete object. Volume replied: {}", resp.status())));
+    let results = try_join_all(
+        volume_urls_for_key
+        .iter()
+        .map(|url| delete_object_on_volume(&ctx, url))
+    ).await?;
+
+    for code in results {
+        if code != StatusCode::NO_CONTENT {
+            return Err(ApiError::Any(anyhow!("failed to delete object. Volume replied: {}", code)));
+        }
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -268,3 +264,29 @@ pub async fn heartbeat(
 
     Ok(StatusCode::OK)
 }
+
+/// Utility functions
+
+fn ensure_write_once(ctx: &CoordinatorState, meta_key: &str) -> Result<(), ApiError> {
+    if let Some(existing) = ctx.db.get::<Meta>(&meta_key)? {
+        match existing.state {
+            TxState::Committed => return Err(ApiError::KeyAlreadyExists),
+            TxState::Pending => return Err(ApiError::KeyAlreadyExists),
+            TxState::Tombstoned => return Err(ApiError::KeyAlreadyExists),
+        }
+    }
+
+    Ok(())
+}
+
+fn content_length_check(headers: &HeaderMap, max_size: u64) -> Result<(), ApiError> {
+    let content_length = parse_content_length(&headers);
+    if let Some(len) = content_length {
+        if len > max_size {
+            return Err(ApiError::TooLarge);
+        }
+    }
+
+    Ok(())
+}
+

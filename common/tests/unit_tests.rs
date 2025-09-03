@@ -1,4 +1,4 @@
-use crate::file_utils::{sanitize_key, blob_path, tmp_path, meta_key_for};
+use common::file_utils::{sanitize_key, blob_path, tmp_path, meta_key_for};
 use std::path::Path;
 
 #[test]

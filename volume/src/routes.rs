@@ -1,55 +1,76 @@
-use tokio::{
-    fs::{self, File, OpenOptions}
-};
-use uuid::Uuid;
+use tokio::{fs::{self, File, OpenOptions}};
 use tokio_util::io::ReaderStream;
+use serde::Deserialize;
 use axum::{
     body::Body,
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Path, State, Query},
+    http::StatusCode,
     response::IntoResponse,
 };
 
 use crate::state::VolumeState;
+use crate::replicate::{PullRequest, CommitRequest, pull_from_head};
 use common::api_error::ApiError;
 use common::schemas::PutResponse;
 use common::file_utils::{
     sanitize_key,
+    fsync_dir,
     blob_path,
     tmp_path,
-    fsync_dir,
     stream_to_file_with_hash,
     file_exists,
 };
 
-const UPLOAD_ID_HEADER_KEY: &str = "X-Upload-Id";
+#[derive(Deserialize, Debug)]
+pub struct PrepareRequest {
+    pub key: String,  // Key is already encoded
+    pub upload_id: String,
+}
 
-// PUT /:key
-pub async fn put_object(
-    Path(raw_key): Path<String>,
+// POST /internal/prepare?key=?upload_id=
+pub async fn prepare_handler(
+    Query(req): Query<PrepareRequest>,
     State(ctx): State<VolumeState>,
-    headers: HeaderMap,
-    body: Body,
-) -> Result<(StatusCode, axum::Json<PutResponse>), ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
-    let final_path = blob_path(&ctx.data_root, &key_enc);
+) -> Result<StatusCode, ApiError> {
+    let final_path = blob_path(&ctx.data_root, &req.key);
 
     // Write-once at volume level (defensive)
     if file_exists(&final_path).await {
         return Err(ApiError::KeyAlreadyExists);
     }
 
-    // Get upload-id from headers (optional)
-    let upload_id = headers
-        .get(UPLOAD_ID_HEADER_KEY)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string)
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    // Ensure tmp dir does not exist
+    let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
+    if file_exists(&tmp_path).await {
+        return Err(ApiError::TmpDirExists);
+    }
 
-    // Ensure parent dirs exist
-    let tmp_path = tmp_path(&ctx.data_root, &upload_id);
+    // Create parent dirs
     if let Some(parent) = tmp_path.parent() {
         fs::create_dir_all(parent).await?;
+    }
+
+    // Open temp file handle for streaming
+    OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&tmp_path)
+        .await?;
+
+    Ok(StatusCode::OK)
+}
+
+// PUT /:upload_id (head only)
+pub async fn write_handler(
+    Path(upload_id): Path<String>,
+    State(ctx): State<VolumeState>,
+    body: Body,
+) -> Result<(StatusCode, axum::Json<PutResponse>), ApiError> {
+    let tmp_path = tmp_path(&ctx.data_root, &upload_id);
+
+    if !file_exists(&tmp_path).await {
+        return Err(ApiError::TmpDirNotFound);
     }
 
     // Open temp file handle for streaming
@@ -61,14 +82,57 @@ pub async fn put_object(
         .await?;
 
     // Stream to temp file, get size and etag
-    let (size, etag) = stream_to_file_with_hash(body, &mut tmp_file).await?;
+    let (size, etag) = stream_to_file_with_hash(body.into_data_stream(), &mut tmp_file).await?;
     tmp_file.sync_all().await?;  // make sure all buffered data is dumped onto disk (durable temp)
 
-    // Commit the file
-    let final_dir = final_path.parent().unwrap();
-    fs::create_dir_all(final_dir).await?;
-    fs::rename(&tmp_path, &final_path).await?;
-    fsync_dir(final_dir).await?;
+    // Build response headers
+    let resp = PutResponse { etag, size };
+    Ok((StatusCode::CREATED, axum::Json(resp)))
+}
+
+// GET /:upload_id (head only)
+pub async fn read_handler(
+    Path(upload_id): Path<String>,
+    State(ctx): State<VolumeState>,
+) -> Result<impl IntoResponse, ApiError> {
+    let tmp_path = tmp_path(&ctx.data_root, &upload_id);
+
+    if !file_exists(&tmp_path).await {
+        return Err(ApiError::TmpDirNotFound);
+    }
+
+    let file = File::open(&tmp_path).await?;
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    Ok((StatusCode::OK, body).into_response())
+}
+
+// POST /pull?upload_id=?from= (follower only)
+pub async fn pull_handler(
+    Query(req): Query<PullRequest>,
+    State(ctx): State<VolumeState>,
+) -> Result<impl IntoResponse, ApiError> {
+    let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
+
+    if !file_exists(&tmp_path).await {
+        return Err(ApiError::TmpDirNotFound);
+    }
+
+    // Open temp file handle for streaming
+    let mut tmp_file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&tmp_path)
+        .await?;
+
+    // Make a request to the head node and stream the response to file
+    let (size, etag) = pull_from_head(&ctx, &req.from, &mut tmp_file).await?;
+
+    if size != req.expected_size || etag != req.expected_etag {
+        return Err(ApiError::ChecksumMismatch);
+    }
 
     // Build response headers
     let resp = PutResponse { etag, size };
@@ -76,8 +140,49 @@ pub async fn put_object(
 }
 
 
+// POST /commit?upload_id=?key=
+pub async fn commit_handler(
+    Query(req): Query<CommitRequest>,
+    State(ctx): State<VolumeState>,
+) -> Result<StatusCode, ApiError> {
+    let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
+    let final_path = blob_path(&ctx.data_root, &req.key);
+
+    if !file_exists(&tmp_path).await {
+        return Err(ApiError::TmpDirNotFound);
+    }
+
+    if file_exists(&final_path).await {
+        return Err(ApiError::KeyAlreadyExists);
+    }
+
+    let final_dir = final_path.parent().unwrap();
+    fs::create_dir_all(final_dir).await?;
+    fs::rename(&tmp_path, &final_path).await?;
+
+    fsync_dir(final_dir).await?;
+
+    Ok(StatusCode::OK)
+}
+
+// POST /abort?upload_id=
+#[derive(Deserialize, Debug)]
+pub struct AbortRequest {
+    pub upload_id: String,
+}
+
+pub async fn abort_handler(
+    Query(req): Query<AbortRequest>,
+    State(ctx): State<VolumeState>,
+) -> Result<StatusCode, ApiError> {
+    let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
+    fs::remove_file(&tmp_path).await?;
+    Ok(StatusCode::OK)
+}
+
+
 // GET /:key
-pub async fn get_object(
+pub async fn get_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>
 ) -> Result<impl IntoResponse, ApiError> {
@@ -97,7 +202,7 @@ pub async fn get_object(
 
 
 // DELETE /:key
-pub async fn delete_object(
+pub async fn delete_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>
 ) -> Result<StatusCode, ApiError> {

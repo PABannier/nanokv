@@ -1,4 +1,4 @@
-use axum::{routing::{put, get, delete}, Router};
+use axum::{routing::{put, get, delete, post}, Router};
 use axum_server::Server;
 use tokio::time::Duration;
 use clap::{Parser};
@@ -10,9 +10,18 @@ use common::file_utils::init_dirs;
 use common::schemas::JoinRequest;
 
 use volume::state::VolumeState;
-use volume::routes::{put_object, get_object, delete_object};
 use volume::store::disk_usage;
 use volume::health::heartbeat_loop;
+use volume::routes::{
+    prepare_handler,
+    write_handler,
+    read_handler,
+    pull_handler,
+    commit_handler,
+    abort_handler,
+    get_handler,
+    delete_handler,
+};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about)]
@@ -76,9 +85,14 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let app = Router::new()
-        .route("/blobs/{key}", get(get_object))
-        .route("/internal/object/{key}", put(put_object))
-        .route("/internal/delete/{key}", delete(delete_object))
+        .route("/internal/prepare", post(prepare_handler))
+        .route("/internal/write/{upload_id}", put(write_handler))
+        .route("/internal/read/{upload_id}", get(read_handler))
+        .route("/internal/pull", post(pull_handler))
+        .route("/internal/commit", post(commit_handler))
+        .route("/internal/abort", post(abort_handler))
+        .route("/internal/delete/{key}", delete(delete_handler))
+        .route("/blobs/{key}", get(get_handler))
         .with_state(state);
 
     info!("listening on {}", args.public_url);
