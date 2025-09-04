@@ -3,8 +3,8 @@ use reqwest::Client;
 mod common;
 use common::*;
 use ::common::file_utils;
-use coord::node::NodeStatus;
-use coord::meta::{Meta, TxState};
+use coord::core::node::NodeStatus;
+use coord::core::meta::{Meta, TxState};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {

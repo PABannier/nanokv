@@ -2,7 +2,7 @@ use reqwest::Client;
 
 mod common;
 use common::*;
-use coord::meta::TxState;
+use coord::core::meta::TxState;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_large_object_streaming_path() -> anyhow::Result<()> {

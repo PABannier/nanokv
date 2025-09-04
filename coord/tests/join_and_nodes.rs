@@ -6,7 +6,7 @@ use tokio::time::sleep;
 mod common;
 use common::*;
 use ::common::time_utils;
-use coord::node::NodeStatus;
+use coord::core::node::NodeStatus;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_join_and_nodes_listing() -> anyhow::Result<()> {

@@ -3,9 +3,9 @@ use blake3::Hasher;
 use common::api_error::ApiError;
 use rand::seq::IndexedRandom;
 
-use crate::state::CoordinatorState;
-use crate::node::{NodeInfo, NodeStatus};
-use crate::meta::Meta;
+use crate::core::state::CoordinatorState;
+use crate::core::node::{NodeInfo, NodeStatus};
+use crate::core::meta::Meta;
 
 
 const N_TOP_BYTES_FOR_SCORE: usize = 16;

@@ -1,11 +1,11 @@
 use axum::extract::{Path, State};
 use serde::Serialize;
 
-use crate::state::CoordinatorState;
+use crate::core::state::CoordinatorState;
 use common::api_error::ApiError;
 
 #[cfg(test)]
-use crate::placement::choose_top_n_alive;
+use crate::core::placement::choose_top_n_alive;
 #[cfg(test)]
 use common::file_utils::sanitize_key;
 

@@ -6,14 +6,14 @@ use tokio::sync::watch;
 
 use std::time::Instant;
 
-use crate::node::NodeStatus;
-use crate::state::CoordinatorState;
+use crate::core::node::NodeStatus;
+use crate::core::state::CoordinatorState;
 
 use common::file_utils::tmp_path;
 use common::constants::{META_KEY_PREFIX, TMP_DIR_NAME, NODE_KEY_PREFIX};
 use common::time_utils::utc_now_ms;
 
-use crate::meta::{Meta, TxState, KvDb};
+use crate::core::meta::{Meta, TxState, KvDb};
 
 pub async fn startup_cleanup(data_root: &Path, db: &KvDb, grace: Duration) -> anyhow::Result<()> {
     let now_ms = utc_now_ms();

@@ -15,12 +15,12 @@ use tokio::task::JoinHandle;
 
 use common::file_utils::init_dirs;
 use common::schemas::JoinRequest;
-use coord::health::node_status_sweeper;
-use coord::meta::KvDb;
-use coord::node::{NodeInfo, NodeStatus};
-use coord::placement::rank_nodes;
-use coord::routes::{delete_object, get_object, put_object, head_object, list_nodes as coord_list_nodes, join_node, heartbeat};
-use coord::state::CoordinatorState;
+use coord::core::health::node_status_sweeper;
+use coord::core::meta::KvDb;
+use coord::core::node::{NodeInfo, NodeStatus};
+use coord::core::placement::rank_nodes;
+use coord::core::routes::{delete_object, get_object, put_object, head_object, list_nodes as coord_list_nodes, join_node, heartbeat};
+use coord::core::state::CoordinatorState;
 use volume::health::heartbeat_loop;
 use volume::routes;
 use volume::state::VolumeState;
@@ -97,7 +97,7 @@ impl TestCoordinator {
             .route("/admin/join", post(join_node))
             .route("/admin/heartbeat", post(heartbeat))
             // Debug endpoint (test-only)
-            .route("/debug/placement/{key}", get(coord::debug::debug_placement))
+            .route("/debug/placement/{key}", get(coord::core::debug::debug_placement))
             .with_state(state.clone());
 
         let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -557,4 +557,4 @@ pub async fn get_debug_placement(
 }
 
 // Import the Meta type for the meta_of function
-use coord::meta::Meta;
+use coord::core::meta::Meta;

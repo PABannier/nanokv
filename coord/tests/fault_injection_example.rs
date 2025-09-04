@@ -33,7 +33,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     // Wait for all volumes to join and heartbeat
     wait_until(5000, || async {
         let nodes = list_nodes(&coord.state.http_client, coord.url()).await.unwrap_or_default();
-        Ok(nodes.len() >= 3 && nodes.iter().all(|n| matches!(n.status, coord::node::NodeStatus::Alive)))
+        Ok(nodes.len() >= 3 && nodes.iter().all(|n| matches!(n.status, coord::core::node::NodeStatus::Alive)))
     }).await?;
 
     let client = &coord.state.http_client;

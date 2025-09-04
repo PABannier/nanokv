@@ -19,11 +19,11 @@ use common::file_utils::{
 };
 use common::file_utils::parse_content_length;
 
-use crate::op::{meta, prepare, guard::AbortGuard, write, pull, commit};
-use crate::node::{NodeInfo, NodeStatus, NodeRuntime};
-use crate::state::CoordinatorState;
-use crate::meta::{Meta, TxState};
-use crate::placement::{
+use crate::core::op::{meta, prepare, guard::AbortGuard, write, pull, commit};
+use crate::core::node::{NodeInfo, NodeStatus, NodeRuntime};
+use crate::core::state::CoordinatorState;
+use crate::core::meta::{Meta, TxState};
+use crate::core::placement::{
     choose_top_n_alive,
     get_volume_url_for_key,
     get_all_volume_urls_for_key

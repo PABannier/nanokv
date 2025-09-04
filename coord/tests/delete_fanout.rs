@@ -2,8 +2,8 @@ use reqwest::Client;
 
 mod common;
 use common::*;
-use coord::meta::TxState;
-use coord::node::NodeStatus;
+use coord::core::meta::TxState;
+use coord::core::node::NodeStatus;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_delete_fanout_idempotent() -> anyhow::Result<()> {

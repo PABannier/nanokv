@@ -3,8 +3,8 @@ use reqwest::Client;
 mod common;
 use common::*;
 use ::common::file_utils;
-use coord::node::NodeStatus;
-use coord::meta::{Meta, TxState};
+use coord::core::node::NodeStatus;
+use coord::core::meta::{Meta, TxState};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_write_once_semantics() -> anyhow::Result<()> {
@@ -79,7 +79,7 @@ async fn test_write_once_with_pending_state() -> anyhow::Result<()> {
     
     // Artificially create a Pending state in the DB (simulating an interrupted upload)
     let meta_key = file_utils::meta_key_for("pending%2Dkey");
-    let pending_meta = coord::meta::Meta::pending("test-upload-id".to_string(), vec!["vol-1".to_string()]);
+    let pending_meta = Meta::pending("test-upload-id".to_string(), vec!["vol-1".to_string()]);
     coord.state.db.put(&meta_key, &pending_meta)?;
     
     // Now try to PUT the same key - should get conflict due to existing Pending state

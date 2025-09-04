@@ -2,7 +2,7 @@ use reqwest::Client;
 
 mod common;
 use common::*;
-use coord::node::NodeStatus;
+use coord::core::node::NodeStatus;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {

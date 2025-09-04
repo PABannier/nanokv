@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 
-use crate::node::NodeInfo;
-use crate::state::CoordinatorState;
+use crate::core::node::NodeInfo;
+use crate::core::state::CoordinatorState;
 
 use common::api_error::ApiError;
 
@@ -9,9 +9,9 @@ use common::api_error::ApiError;
 pub mod guard {
     use futures_util::future::join_all;
 
-    use crate::op::send_abort_request;
-    use crate::state::CoordinatorState;
-    use crate::node::NodeInfo;
+    use crate::core::op::send_abort_request;
+    use crate::core::state::CoordinatorState;
+    use crate::core::node::NodeInfo;
 
     pub struct AbortGuard<'a> {
         ctx: &'a CoordinatorState,
@@ -54,9 +54,9 @@ pub mod meta {
 
     use common::api_error::ApiError;
 
-    use crate::state::CoordinatorState;
-    use crate::node::NodeInfo;
-    use crate::meta::{Meta};
+    use crate::core::state::CoordinatorState;
+    use crate::core::node::NodeInfo;
+    use crate::core::meta::{Meta};
 
     pub fn write_pending_meta(ctx: &CoordinatorState, meta_key: &str, replicas: &Vec<NodeInfo>) -> Result<String, ApiError> {
         let upload_id = Uuid::new_v4().to_string();
@@ -93,9 +93,9 @@ pub mod prepare {
 
     use futures_util::future::try_join_all;
 
-    use crate::state::CoordinatorState;
-    use crate::node::NodeInfo;
-    use crate::op::retry::RetryConfig;
+    use crate::core::state::CoordinatorState;
+    use crate::core::node::NodeInfo;
+    use crate::core::op::retry::RetryConfig;
 
     pub async fn retry_prepare_all(ctx: &CoordinatorState, replicas: &[NodeInfo], key: &str, upload_id: &str) -> Result<(), ApiError> {
         let cfg = RetryConfig::default();
@@ -159,8 +159,8 @@ pub mod write {
     use common::api_error::ApiError;
     use common::schemas::PutResponse;
 
-    use crate::state::CoordinatorState;
-    use crate::node::NodeInfo;
+    use crate::core::state::CoordinatorState;
+    use crate::core::node::NodeInfo;
 
     pub async fn write_to_head_single_shot(
         ctx: &CoordinatorState,
@@ -199,10 +199,10 @@ pub mod pull {
 
     use futures_util::future::try_join_all;
 
-    use crate::state::CoordinatorState;
-    use crate::node::NodeInfo;
-    use crate::op::retry::{retry_timeboxed, RetryClass, classify_reqwest};
-    use crate::op::retry::RetryConfig;
+    use crate::core::state::CoordinatorState;
+    use crate::core::node::NodeInfo;
+    use crate::core::op::retry::{retry_timeboxed, RetryClass, classify_reqwest};
+    use crate::core::op::retry::RetryConfig;
 
     pub async fn retry_pull_all(
         ctx: &CoordinatorState,
@@ -282,8 +282,8 @@ pub mod commit {
 
     use futures_util::future::try_join_all;
 
-    use crate::state::CoordinatorState;
-    use crate::node::NodeInfo;
+    use crate::core::state::CoordinatorState;
+    use crate::core::node::NodeInfo;
 
     pub async fn retry_commit_all(
         ctx: &CoordinatorState,

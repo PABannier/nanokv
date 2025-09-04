@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::Semaphore;
 use reqwest::Client;
 
-use crate::meta::KvDb;
-use crate::node::NodeRuntime;
+use crate::core::meta::KvDb;
+use crate::core::node::NodeRuntime;
 
 #[derive(Clone)]
 pub struct CoordinatorState {

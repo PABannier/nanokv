@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 mod common;
 use common::*;
-use coord::meta::TxState;
+use coord::core::meta::TxState;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_retry_backoff_observable() -> anyhow::Result<()> {

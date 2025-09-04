@@ -1,10 +1,2 @@
-// Export modules for tests
-pub mod placement;
-pub mod health;
-pub mod meta;
-pub mod routes;
-pub mod state;
-pub mod node;
-pub mod op;
-pub mod debug;
-pub mod rebuild;
+pub mod command;
+pub mod core;
