@@ -7,3 +7,4 @@ pub mod state;
 pub mod node;
 pub mod op;
 pub mod debug;
+pub mod rebuild;
