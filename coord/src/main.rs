@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
-use coord::command::serve::{ServeArgs, run_server};
-use coord::command::rebuild::{RebuildArgs, rebuild_index};
+use coord::command::serve::{ServeArgs, serve};
+use coord::command::rebuild::{RebuildArgs, rebuild};
 
 
 #[derive(Parser, Debug, Clone)]
@@ -31,8 +31,8 @@ async fn main() -> anyhow::Result<()>{
     let args = Args::parse();
 
     match args.cmd {
-        Cmd::Serve(serve_args) => { run_server(serve_args).await?; },
-        Cmd::Rebuild(rebuild_args) => { rebuild_index(rebuild_args).await?; }
+        Cmd::Serve(serve_args) => { serve(serve_args).await?; },
+        Cmd::Rebuild(rebuild_args) => { rebuild(rebuild_args).await?; }
     }
 
     Ok(())

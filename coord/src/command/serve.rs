@@ -78,7 +78,7 @@ pub struct ServeArgs {
     deep_verify: bool,
 }
 
-pub async fn run_server(serve_args: ServeArgs) -> anyhow::Result<()> {
+pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
     let db = KvDb::open(&serve_args.index)?;
 
     // Cleanup before serving

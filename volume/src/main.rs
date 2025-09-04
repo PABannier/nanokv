@@ -12,8 +12,22 @@ use common::schemas::JoinRequest;
 use volume::state::VolumeState;
 use volume::store::disk_usage;
 use volume::health::heartbeat_loop;
-use volume::fault_injection::{FaultInjector, fail_prepare, fail_pull, fail_commit, fail_read_tmp, fail_etag_mismatch, inject_latency, pause_server, resume_server, kill_server, reset_faults};
+use volume::fault_injection::{
+    FaultInjector,
+    fail_prepare,
+    fail_pull,
+    fail_commit,
+    fail_read_tmp,
+    fail_etag_mismatch,
+    inject_latency,
+    pause_server,
+    resume_server,
+    kill_server,
+    reset_faults
+};
 use volume::routes::{
+    admin_list_handler,
+    admin_blob_handler,
     prepare_handler,
     write_handler,
     read_handler,
@@ -95,6 +109,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/internal/abort", post(abort_handler))
         .route("/internal/delete/{key}", delete(delete_handler))
         .route("/blobs/{key}", get(get_handler))
+        // Admin endpoints
+        .route("/admin/list", get(admin_list_handler))
+        .route("/admin/blob", get(admin_blob_handler))
         // Fault injection endpoints (test-only)
         .route("/admin/fail/prepare", post(fail_prepare))
         .route("/admin/fail/pull", post(fail_pull))

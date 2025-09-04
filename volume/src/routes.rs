@@ -1,9 +1,11 @@
+use walkdir::WalkDir;
+use std::cmp::Ordering;
 use tokio::{fs::{self, File, OpenOptions}};
 use tokio_util::io::ReaderStream;
-use serde::Deserialize;
+use serde::{Deserialize};
 use axum::{
     body::Body,
-    extract::{Path, State, Query},
+    extract::{Path, State, Query, Json},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -11,14 +13,15 @@ use axum::{
 
 use crate::state::VolumeState;
 use crate::replicate::{PullRequest, CommitRequest, pull_from_head};
-use common::api_error::ApiError;
-use common::schemas::PutResponse;
+use common::{api_error::ApiError, constants::BLOB_DIR_NAME};
+use common::schemas::{PutResponse, ListResponse, BlobHead};
 use common::file_utils::{
     sanitize_key,
     fsync_dir,
     blob_path,
     tmp_path,
     stream_to_file_with_hash,
+    file_hash,
     file_exists,
 };
 
@@ -37,7 +40,7 @@ pub async fn prepare_handler(
     ctx.fault_injector.check_killed()?;
     ctx.fault_injector.wait_if_paused().await;
     ctx.fault_injector.apply_latency().await;
-    
+
     if ctx.fault_injector.should_fail_prepare() {
         return Err(ApiError::Any(anyhow::anyhow!("Fault injection: prepare failed")));
     }
@@ -114,7 +117,7 @@ pub async fn read_handler(
     ctx.fault_injector.check_killed()?;
     ctx.fault_injector.wait_if_paused().await;
     ctx.fault_injector.apply_latency().await;
-    
+
     if ctx.fault_injector.should_fail_read_tmp() {
         return Err(ApiError::Any(anyhow::anyhow!("Fault injection: read tmp failed")));
     }
@@ -141,7 +144,7 @@ pub async fn pull_handler(
     ctx.fault_injector.check_killed()?;
     ctx.fault_injector.wait_if_paused().await;
     ctx.fault_injector.apply_latency().await;
-    
+
     if ctx.fault_injector.should_fail_pull() {
         return Err(ApiError::Any(anyhow::anyhow!("Fault injection: pull failed")));
     }
@@ -196,11 +199,11 @@ pub async fn commit_handler(
     ctx.fault_injector.check_killed()?;
     ctx.fault_injector.wait_if_paused().await;
     ctx.fault_injector.apply_latency().await;
-    
+
     if ctx.fault_injector.should_fail_commit() {
         return Err(ApiError::Any(anyhow::anyhow!("Fault injection: commit failed")));
     }
-    
+
     if ctx.fault_injector.should_timeout_commit() {
         // Simulate a long timeout
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
@@ -279,4 +282,84 @@ pub async fn delete_handler(
     fs::remove_file(&path).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+// HEAD /admin/list?limit=?after=?
+#[derive(Deserialize)]
+pub struct ListRequest {
+    pub limit: Option<usize>,
+    pub after: Option<String>,  // percent-encoded cursor (exclusive)
+}
+
+
+const DEFAULT_PAGE_LIMIT: usize = 1000;
+const MAX_PAGE_LIMIT: usize = 5000;
+
+pub async fn admin_list_handler(
+    State(ctx): State<VolumeState>,
+    Query(req): Query<ListRequest>,
+) -> Result<Json<ListResponse>, ApiError> {
+    let limit = req.limit.unwrap_or(DEFAULT_PAGE_LIMIT).clamp(1, MAX_PAGE_LIMIT);
+    let after_enc = req.after.unwrap_or_default();
+
+    // Walk blobs/aa/bb/<key>, flatten into encoded keys
+    // TODO: This is O(n) in the number of keys, for large store, we should consider a
+    // small index.
+    let root = ctx.data_root.join(BLOB_DIR_NAME);
+    let mut keys: Vec<String> = Vec::with_capacity(limit + 1);
+    let mut seen_after = after_enc.is_empty();
+
+    for entry in WalkDir::new(&root).min_depth(3).max_depth(3) {
+        let entry = match entry {
+            Ok(e) if e.file_type().is_file() => e,
+            _ => continue,
+        };
+        let key_enc = entry.file_name().to_string_lossy().to_string();
+
+        // cursor (exclusive)
+        if !after_enc.is_empty() && !seen_after {
+            match key_enc.as_str().cmp(after_enc.as_str()) {
+                Ordering::Less | Ordering::Equal => continue,
+                Ordering::Greater => seen_after = true,
+            }
+        }
+
+        keys.push(key_enc);
+        if keys.len() == limit {
+            break;
+        }
+    }
+
+    let next_after = keys.last().cloned();
+    Ok(Json(ListResponse { keys, next_after }))
+}
+
+
+// GET /admin/blob?key=...&deep=...
+#[derive(Deserialize)]
+pub struct BlobRequest { key: String, deep: Option<bool> }
+
+
+pub async fn admin_blob_handler(
+    State(ctx): State<VolumeState>,
+    Query(req): Query<BlobRequest>,
+) -> Result<Json<BlobHead>, ApiError> {
+    let key_enc = sanitize_key(&req.key)?;
+    let path = blob_path(&ctx.data_root, &key_enc);
+
+    let exists = file_exists(&path).await;
+
+    if !exists {
+        return Ok(Json(BlobHead { exists, size: 0, etag: None }));
+    }
+
+    let size = fs::metadata(&path).await?.len();
+    let deep = req.deep.unwrap_or(false);
+    let etag = if deep {
+        Some(file_hash(&path).await?)
+    } else {
+        None
+    };
+
+    Ok(Json(BlobHead { exists: true, size, etag }))
 }

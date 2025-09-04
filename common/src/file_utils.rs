@@ -4,6 +4,7 @@ use std::{
 };
 use bytes::Bytes;
 use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 use tokio::{
     fs,
     io::{AsyncWriteExt},
@@ -73,6 +74,18 @@ pub async fn fsync_dir(dir: &Path) -> io::Result<()> {
     let dirf = std::fs::File::open(dir)?;
     dirf.sync_all()?;
     Ok(())
+}
+
+pub async fn file_hash(path: &Path) -> io::Result<String> {
+    let mut f = File::open(path).await?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; 1024*1024];
+    loop {
+        let n = f.read(&mut buf).await?;
+        if n == 0 { break; }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 pub async fn stream_to_file_with_hash<S, E>(
