@@ -8,8 +8,6 @@ use common::api_error::ApiError;
 use crate::placement::choose_top_n_alive;
 #[cfg(test)]
 use common::file_utils::sanitize_key;
-#[cfg(not(test))]
-use anyhow::anyhow;
 
 #[derive(Serialize)]
 pub struct PlacementResponse {
