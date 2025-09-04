@@ -12,6 +12,7 @@ use common::schemas::JoinRequest;
 use volume::state::VolumeState;
 use volume::store::disk_usage;
 use volume::health::heartbeat_loop;
+use volume::fault_injection::{FaultInjector, fail_prepare, fail_pull, fail_commit, fail_read_tmp, fail_etag_mismatch, inject_latency, pause_server, resume_server, kill_server, reset_faults};
 use volume::routes::{
     prepare_handler,
     write_handler,
@@ -72,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         subvols: args.subvols,
         heartbeat_interval_secs: args.heartbeat_interval_secs,
         http_timeout_secs: args.http_timeout_secs,
+        fault_injector: Arc::new(FaultInjector::new()),
     };
 
     join_cluster(&state).await?;
@@ -93,6 +95,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/internal/abort", post(abort_handler))
         .route("/internal/delete/{key}", delete(delete_handler))
         .route("/blobs/{key}", get(get_handler))
+        // Fault injection endpoints (test-only)
+        .route("/admin/fail/prepare", post(fail_prepare))
+        .route("/admin/fail/pull", post(fail_pull))
+        .route("/admin/fail/commit", post(fail_commit))
+        .route("/admin/fail/read_tmp", post(fail_read_tmp))
+        .route("/admin/fail/etag_mismatch", post(fail_etag_mismatch))
+        .route("/admin/inject/latency", post(inject_latency))
+        .route("/admin/pause", post(pause_server))
+        .route("/admin/resume", post(resume_server))
+        .route("/admin/kill", post(kill_server))
+        .route("/admin/reset", post(reset_faults))
         .with_state(state);
 
     info!("listening on {}", args.public_url);

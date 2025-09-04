@@ -17,6 +17,7 @@ use coord::state::CoordinatorState;
 use coord::health::{startup_cleanup, sweep_tmp_orphans, node_status_sweeper};
 use coord::meta::KvDb;
 use coord::routes::{delete_object, get_object, put_object, head_object, list_nodes, join_node, heartbeat};
+use coord::debug::debug_placement;
 
 
 #[derive(Parser, Debug, Clone)]
@@ -125,6 +126,8 @@ async fn main() -> anyhow::Result<()>{
         .route("/admin/nodes", get(list_nodes))
         .route("/admin/join", post(join_node))
         .route("/admin/heartbeat", post(heartbeat))
+        // Debug endpoint (test-only)
+        .route("/debug/placement/{key}", get(debug_placement))
         .with_state(state.clone());
 
     info!("listening on {}", args.listen);

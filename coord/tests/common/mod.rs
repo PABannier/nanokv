@@ -96,6 +96,8 @@ impl TestCoordinator {
             .route("/admin/nodes", get(coord_list_nodes))
             .route("/admin/join", post(join_node))
             .route("/admin/heartbeat", post(heartbeat))
+            // Debug endpoint (test-only)
+            .route("/debug/placement/{key}", get(coord::debug::debug_placement))
             .with_state(state.clone());
 
         let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -171,6 +173,7 @@ impl TestVolume {
             subvols: 1,
             heartbeat_interval_secs: 1,
             http_timeout_secs: 10,
+            fault_injector: Arc::new(volume::fault_injection::FaultInjector::new()),
         };
 
         // For Phase 2, volumes need the full set of internal endpoints
@@ -183,6 +186,17 @@ impl TestVolume {
             .route("/internal/commit", post(routes::commit_handler))
             .route("/internal/abort", post(routes::abort_handler))
             .route("/internal/delete/{key}", delete(routes::delete_handler))
+            // Fault injection endpoints (test-only)
+            .route("/admin/fail/prepare", post(volume::fault_injection::fail_prepare))
+            .route("/admin/fail/pull", post(volume::fault_injection::fail_pull))
+            .route("/admin/fail/commit", post(volume::fault_injection::fail_commit))
+            .route("/admin/fail/read_tmp", post(volume::fault_injection::fail_read_tmp))
+            .route("/admin/fail/etag_mismatch", post(volume::fault_injection::fail_etag_mismatch))
+            .route("/admin/inject/latency", post(volume::fault_injection::inject_latency))
+            .route("/admin/pause", post(volume::fault_injection::pause_server))
+            .route("/admin/resume", post(volume::fault_injection::resume_server))
+            .route("/admin/kill", post(volume::fault_injection::kill_server))
+            .route("/admin/reset", post(volume::fault_injection::reset_faults))
             .with_state(state.clone());
 
         let (shutdown_tx, _shutdown_rx) = watch::channel(false);

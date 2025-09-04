@@ -8,6 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 
+
 use crate::state::VolumeState;
 use crate::replicate::{PullRequest, CommitRequest, pull_from_head};
 use common::api_error::ApiError;
@@ -32,6 +33,15 @@ pub async fn prepare_handler(
     Query(req): Query<PrepareRequest>,
     State(ctx): State<VolumeState>,
 ) -> Result<StatusCode, ApiError> {
+    // Fault injection checks
+    ctx.fault_injector.check_killed()?;
+    ctx.fault_injector.wait_if_paused().await;
+    ctx.fault_injector.apply_latency().await;
+    
+    if ctx.fault_injector.should_fail_prepare() {
+        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: prepare failed")));
+    }
+
     let final_path = blob_path(&ctx.data_root, &req.key);
 
     // Write-once at volume level (defensive)
@@ -67,6 +77,11 @@ pub async fn write_handler(
     State(ctx): State<VolumeState>,
     body: Body,
 ) -> Result<(StatusCode, axum::Json<PutResponse>), ApiError> {
+    // Fault injection checks
+    ctx.fault_injector.check_killed()?;
+    ctx.fault_injector.wait_if_paused().await;
+    ctx.fault_injector.apply_latency().await;
+
     let tmp_path = tmp_path(&ctx.data_root, &upload_id);
 
     if !file_exists(&tmp_path).await {
@@ -95,6 +110,15 @@ pub async fn read_handler(
     Path(upload_id): Path<String>,
     State(ctx): State<VolumeState>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // Fault injection checks
+    ctx.fault_injector.check_killed()?;
+    ctx.fault_injector.wait_if_paused().await;
+    ctx.fault_injector.apply_latency().await;
+    
+    if ctx.fault_injector.should_fail_read_tmp() {
+        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: read tmp failed")));
+    }
+
     let tmp_path = tmp_path(&ctx.data_root, &upload_id);
 
     if !file_exists(&tmp_path).await {
@@ -113,6 +137,15 @@ pub async fn pull_handler(
     Query(req): Query<PullRequest>,
     State(ctx): State<VolumeState>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // Fault injection checks
+    ctx.fault_injector.check_killed()?;
+    ctx.fault_injector.wait_if_paused().await;
+    ctx.fault_injector.apply_latency().await;
+    
+    if ctx.fault_injector.should_fail_pull() {
+        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: pull failed")));
+    }
+
     let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
 
     if !file_exists(&tmp_path).await {
@@ -127,15 +160,29 @@ pub async fn pull_handler(
         .open(&tmp_path)
         .await?;
 
+    // Check for mid-stream failure
+    if ctx.fault_injector.should_fail_pull_mid_stream() {
+        // Start the pull but fail partway through
+        let _ = pull_from_head(&ctx, &req.from, &mut tmp_file).await;
+        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: pull failed mid-stream")));
+    }
+
     // Make a request to the head node and stream the response to file
     let (size, etag) = pull_from_head(&ctx, &req.from, &mut tmp_file).await?;
 
-    if size != req.expected_size || etag != req.expected_etag {
+    // Check for etag mismatch fault injection
+    let final_etag = if ctx.fault_injector.should_fail_etag_mismatch() {
+        "fault_injected_wrong_etag".to_string()
+    } else {
+        etag
+    };
+
+    if size != req.expected_size || final_etag != req.expected_etag {
         return Err(ApiError::ChecksumMismatch);
     }
 
     // Build response headers
-    let resp = PutResponse { etag, size };
+    let resp = PutResponse { etag: final_etag, size };
     Ok((StatusCode::CREATED, axum::Json(resp)))
 }
 
@@ -145,6 +192,21 @@ pub async fn commit_handler(
     Query(req): Query<CommitRequest>,
     State(ctx): State<VolumeState>,
 ) -> Result<StatusCode, ApiError> {
+    // Fault injection checks
+    ctx.fault_injector.check_killed()?;
+    ctx.fault_injector.wait_if_paused().await;
+    ctx.fault_injector.apply_latency().await;
+    
+    if ctx.fault_injector.should_fail_commit() {
+        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: commit failed")));
+    }
+    
+    if ctx.fault_injector.should_timeout_commit() {
+        // Simulate a long timeout
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: commit timed out")));
+    }
+
     let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
     let final_path = blob_path(&ctx.data_root, &req.key);
 
@@ -175,6 +237,11 @@ pub async fn abort_handler(
     Query(req): Query<AbortRequest>,
     State(ctx): State<VolumeState>,
 ) -> Result<StatusCode, ApiError> {
+    // Fault injection checks
+    ctx.fault_injector.check_killed()?;
+    ctx.fault_injector.wait_if_paused().await;
+    ctx.fault_injector.apply_latency().await;
+
     let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
     fs::remove_file(&tmp_path).await?;
     Ok(StatusCode::OK)
