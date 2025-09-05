@@ -29,3 +29,15 @@ pub struct ListResponse {
 
 #[derive(Serialize, Deserialize)]
 pub struct BlobHead { pub exists: bool, pub size: u64, pub etag: Option<String> }
+
+#[derive(Serialize, Deserialize)]
+pub struct SweepTmpQuery {
+    // Delete tmp files older than this many seconds
+    pub sweep_age_secs: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SweepTmpResponse {
+    pub removed: u64,
+    pub kept_recent: u64,
+}

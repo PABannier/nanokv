@@ -28,6 +28,7 @@ use volume::fault_injection::{
 use volume::routes::{
     admin_list_handler,
     admin_blob_handler,
+    admin_sweep_tmp_handler,
     prepare_handler,
     write_handler,
     read_handler,
@@ -112,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         // Admin endpoints
         .route("/admin/list", get(admin_list_handler))
         .route("/admin/blob", get(admin_blob_handler))
+        .route("/admin/sweep-tmp", post(admin_sweep_tmp_handler))
         // Fault injection endpoints (test-only)
         .route("/admin/fail/prepare", post(fail_prepare))
         .route("/admin/fail/pull", post(fail_pull))

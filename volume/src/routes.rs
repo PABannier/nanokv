@@ -1,5 +1,5 @@
 use walkdir::WalkDir;
-use std::cmp::Ordering;
+use std::{cmp::Ordering, time::{Duration, SystemTime}};
 use tokio::{fs::{self, File, OpenOptions}};
 use tokio_util::io::ReaderStream;
 use serde::{Deserialize};
@@ -10,11 +10,10 @@ use axum::{
     response::IntoResponse,
 };
 
-
 use crate::state::VolumeState;
 use crate::replicate::{PullRequest, CommitRequest, pull_from_head};
-use common::{api_error::ApiError, constants::BLOB_DIR_NAME};
-use common::schemas::{PutResponse, ListResponse, BlobHead};
+use common::{api_error::ApiError, constants::{BLOB_DIR_NAME, TMP_DIR_NAME}};
+use common::schemas::{PutResponse, ListResponse, BlobHead, SweepTmpQuery, SweepTmpResponse};
 use common::file_utils::{
     sanitize_key,
     fsync_dir,
@@ -361,4 +360,36 @@ pub async fn admin_blob_handler(
     };
 
     Ok(Json(BlobHead { exists: true, size, etag }))
+}
+
+// POST /admin/sweep-tmp?sweep_age_secs=
+pub async fn admin_sweep_tmp_handler(
+    State(ctx): State<VolumeState>,
+    Query(req): Query<SweepTmpQuery>,
+) -> Result<Json<SweepTmpResponse>, ApiError> {
+    let root = ctx.data_root.join(TMP_DIR_NAME);
+    let now = SystemTime::now();
+    let safe_age = Duration::from_secs(req.sweep_age_secs.unwrap_or(3600));
+    let cutoff = now.checked_sub(safe_age).unwrap_or(now);
+
+    let mut removed = 0u64;
+    let mut kept = 0u64;
+
+    if root.exists() {
+        for entry in WalkDir::new(&root).min_depth(1).max_depth(1) {
+            let entry = match entry { Ok(e) => e, Err(_) => continue };
+            if !entry.file_type().is_file() { continue; }
+            let p = entry.into_path();
+            let meta = match fs::metadata(&p).await { Ok(m) => m, Err(_) => continue };
+            let mt = meta.modified().unwrap_or(now);
+            if mt <= cutoff {
+                let _ = tokio::fs::remove_file(&p).await;
+                removed += 1;
+            } else {
+                kept += 1;
+            }
+        }
+    }
+
+    Ok(Json(SweepTmpResponse { removed, kept_recent: kept }))
 }

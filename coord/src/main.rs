@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+use coord::command::gc::{GcArgs, gc};
 use coord::command::serve::{ServeArgs, serve};
 use coord::command::rebuild::{RebuildArgs, rebuild};
 use coord::command::verify::{VerifyArgs, verify};
@@ -23,6 +24,8 @@ enum Cmd {
     Verify(VerifyArgs),
     /// Ensure all values are replicated
     Repair(RepairArgs),
+    /// Collect tombstones
+    Gc(GcArgs),
 }
 
 
@@ -41,6 +44,7 @@ async fn main() -> anyhow::Result<()>{
         Cmd::Rebuild(rebuild_args) => { rebuild(rebuild_args).await?; },
         Cmd::Verify(verify_args) => { verify(verify_args).await?; },
         Cmd::Repair(repair_args) => { repair(repair_args).await?; },
+        Cmd::Gc(gc_args) => { gc(gc_args).await?; },
     }
 
     Ok(())
