@@ -1,7 +1,7 @@
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct NodeInfo {
     pub node_id: String,              // provided by volume (stable)
     pub public_url: String,           // where the client GET blobs
@@ -20,7 +20,7 @@ pub struct NodeRuntime {
     pub last_seen: Instant,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum NodeStatus {
     Alive,
     Suspect,

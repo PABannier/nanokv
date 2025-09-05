@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use axum::extract::{Path, State};
 use serde::Serialize;
 
@@ -26,7 +27,12 @@ pub async fn debug_placement(
     let key_enc = sanitize_key(&raw_key)?;
     
     // Get the replicas in HRW order (same logic as PUT)
-    let replicas = choose_top_n_alive(&ctx, &key_enc, ctx.n_replicas)?;
+    let nodes = ctx.nodes.read()
+        .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
+        .iter()
+        .map(|(_,n)| n.info.clone())
+        .collect::<Vec<_>>();
+    let replicas = choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas);
     
     let node_ids: Vec<String> = replicas.iter()
         .map(|replica| replica.node_id.clone())

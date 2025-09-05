@@ -47,27 +47,36 @@ pub async fn put_object(
     content_length_check(&headers, ctx.max_size)?;
 
     // Find replicas
-    let replicas = choose_top_n_alive(&ctx, &key_enc, ctx.n_replicas)?;
+    let replicas = {
+        let nodes = ctx.nodes
+            .read()
+            .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
+            .iter()
+            .map(|(_,n)| n.info.clone())
+            .collect::<Vec<_>>();
+        choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas)
+    };
+
     if replicas.len() < ctx.n_replicas { return Err(ApiError::NoQuorum); }
 
     // Declare an inflight upload
     let _permit = ctx.inflight.acquire().await.unwrap();
 
     // Write pending transaction in DB
-    let upload_id = meta::write_pending_meta(&ctx, &meta_key, &replicas)?;
+    let upload_id = meta::write_pending_meta(&ctx.db, &meta_key, &replicas)?;
 
     // Abort guard (abort on failure if dropped before disarmed)
-    let mut guard = AbortGuard::new(&ctx, &replicas, upload_id.clone());
+    let mut guard = AbortGuard::new(&ctx.http_client, &replicas, upload_id.clone());
 
     // Prepare all replicas with a retry
-    prepare::retry_prepare_all(&ctx, &replicas, &key_enc, &upload_id).await?;
+    prepare::retry_prepare_all(&ctx.http_client, &replicas, &key_enc, &upload_id).await?;
 
     // Write to the head node (single-shot; long timeout). If this fails, abort.
     let head = replicas.first().unwrap();
-    let (size, etag) = write::write_to_head_single_shot(&ctx, head, body, &upload_id).await?;
+    let (size, etag) = write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id).await?;
 
     // Pull all from head with a retry
-    pull::retry_pull_all(&ctx, head, &replicas[1..], &upload_id, size, &etag).await?;
+    pull::retry_pull_all(&ctx.http_client, head, &replicas[1..], &upload_id, size, &etag).await?;
 
     // At this point, all replicas have the data in temporary files. We can disarm the
     // guard. If the commit fails, a verify or clean operation will clean up the temporary
@@ -75,10 +84,10 @@ pub async fn put_object(
     guard.disarm();
 
     // Commit
-    commit::retry_commit_all(&ctx, &replicas, &upload_id, &key_enc).await?;
+    commit::retry_commit_all(&ctx.http_client, &replicas, &upload_id, &key_enc).await?;
 
     // Write committed transaction in DB
-    meta::write_committed_meta(&ctx, &meta_key, size, etag.clone(), &replicas)?;
+    meta::write_committed_meta(&ctx.db, &meta_key, size, etag.clone(), &replicas)?;
 
     // Build response headers
     let mut resp_headers = HeaderMap::new();

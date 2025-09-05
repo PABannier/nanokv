@@ -29,22 +29,10 @@ pub fn rank_nodes<'a>(key: &str, nodes: &'a [NodeInfo]) -> Vec<&'a NodeInfo>{
     scored.into_iter().map(|(_,n)| n).collect()
 }
 
-fn alive_nodes_for_placement(ctx: &CoordinatorState) -> anyhow::Result<Vec<NodeInfo>> {
-    let nodes = ctx.nodes.read().map_err(|e| anyhow::anyhow!("failed to acquire nodes read lock: {}", e))?;
-    let alive_nodes = nodes.iter().filter_map(|(_,n)| {
-        if n.info.status == NodeStatus::Alive {
-            Some(n.info.clone())
-        } else {
-            None
-        }
-    }).collect();
-    Ok(alive_nodes)
-}
-
-pub fn choose_top_n_alive(ctx: &CoordinatorState, key: &str, n: usize) -> anyhow::Result<Vec<NodeInfo>> {
-    let alive_nodes = alive_nodes_for_placement(ctx)?;
+pub fn choose_top_n_alive(nodes: &[NodeInfo], key: &str, n: usize) -> Vec<NodeInfo> {
+    let alive_nodes = nodes.iter().filter(|n| n.status == NodeStatus::Alive).cloned().collect::<Vec<NodeInfo>>();
     let ranked_nodes = rank_nodes(key, &alive_nodes);
-    Ok(ranked_nodes.into_iter().take(n).cloned().collect::<Vec<NodeInfo>>())
+    ranked_nodes.into_iter().take(n).cloned().collect::<Vec<NodeInfo>>()
 }
 
 pub fn get_volume_url_for_key(ctx: &CoordinatorState, meta: &Meta) -> Result<String, ApiError> {

@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 
 use coord::command::serve::{ServeArgs, serve};
 use coord::command::rebuild::{RebuildArgs, rebuild};
+use coord::command::verify::{VerifyArgs, verify};
+use coord::command::repair::{RepairArgs, repair};
 
 
 #[derive(Parser, Debug, Clone)]
@@ -17,6 +19,10 @@ enum Cmd {
     Serve(ServeArgs),
     /// Rebuild the index
     Rebuild(RebuildArgs),
+    /// Verify the index
+    Verify(VerifyArgs),
+    /// Ensure all values are replicated
+    Repair(RepairArgs),
 }
 
 
@@ -32,7 +38,9 @@ async fn main() -> anyhow::Result<()>{
 
     match args.cmd {
         Cmd::Serve(serve_args) => { serve(serve_args).await?; },
-        Cmd::Rebuild(rebuild_args) => { rebuild(rebuild_args).await?; }
+        Cmd::Rebuild(rebuild_args) => { rebuild(rebuild_args).await?; },
+        Cmd::Verify(verify_args) => { verify(verify_args).await?; },
+        Cmd::Repair(repair_args) => { repair(repair_args).await?; },
     }
 
     Ok(())

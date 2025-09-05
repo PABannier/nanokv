@@ -29,3 +29,7 @@ pub fn sanitize_url(url: &str) -> anyhow::Result<String> {
     // Return the normalized URL string
     Ok(trimmed.to_string())
 }
+
+pub fn node_id_from_url(u: &str) -> String {
+    u.trim_start_matches("http://").trim_start_matches("https://").to_string()
+}

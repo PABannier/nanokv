@@ -139,7 +139,7 @@ pub async fn read_handler(
 pub async fn pull_handler(
     Query(req): Query<PullRequest>,
     State(ctx): State<VolumeState>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<(StatusCode, Json<PutResponse>), ApiError> {
     // Fault injection checks
     ctx.fault_injector.check_killed()?;
     ctx.fault_injector.wait_if_paused().await;
@@ -184,7 +184,6 @@ pub async fn pull_handler(
         return Err(ApiError::ChecksumMismatch);
     }
 
-    // Build response headers
     let resp = PutResponse { etag: final_etag, size };
     Ok((StatusCode::CREATED, axum::Json(resp)))
 }
@@ -284,7 +283,7 @@ pub async fn delete_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// HEAD /admin/list?limit=?after=?
+// GET /admin/list?limit=?after=?
 #[derive(Deserialize)]
 pub struct ListRequest {
     pub limit: Option<usize>,
