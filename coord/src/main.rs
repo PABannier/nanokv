@@ -4,6 +4,7 @@ use coord::command::gc::{GcArgs, gc};
 use coord::command::serve::{ServeArgs, serve};
 use coord::command::rebuild::{RebuildArgs, rebuild};
 use coord::command::verify::{VerifyArgs, verify};
+use coord::command::rebalance::{RebalanceArgs, rebalance};
 use coord::command::repair::{RepairArgs, repair};
 
 
@@ -24,6 +25,8 @@ enum Cmd {
     Verify(VerifyArgs),
     /// Ensure all values are replicated
     Repair(RepairArgs),
+    /// Rebalance the index
+    Rebalance(RebalanceArgs),
     /// Collect tombstones
     Gc(GcArgs),
 }
@@ -43,6 +46,7 @@ async fn main() -> anyhow::Result<()>{
         Cmd::Serve(serve_args) => { serve(serve_args).await?; },
         Cmd::Rebuild(rebuild_args) => { rebuild(rebuild_args).await?; },
         Cmd::Verify(verify_args) => { verify(verify_args).await?; },
+        Cmd::Rebalance(rebalance_args) => { rebalance(rebalance_args).await?; },
         Cmd::Repair(repair_args) => { repair(repair_args).await?; },
         Cmd::Gc(gc_args) => { gc(gc_args).await?; },
     }

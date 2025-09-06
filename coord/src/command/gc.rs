@@ -15,7 +15,7 @@ use common::time_utils::utc_now_ms;
 use common::schemas::{SweepTmpResponse, ListResponse};
 use common::constants::META_KEY_PREFIX;
 
-use crate::core::node::{discover_alive_nodes, build_explicit_volume_urls};
+use crate::command::common::{nodes_from_db, nodes_from_explicit};
 use crate::core::meta::{KvDb, Meta, TxState};
 
 #[derive(Parser, Debug, Clone)]
@@ -97,9 +97,10 @@ pub async fn gc(args: GcArgs) -> anyhow::Result<()> {
         .build()?;
     let db = KvDb::open(&args.index)?;
 
-    let nodes = match discover_alive_nodes(&db, true /* include suspect */) {
-        Ok(n) => n,
-        Err(_) => { build_explicit_volume_urls(args.volumes.clone()) }
+    let nodes = if let Some(vs) = args.volumes.clone() {
+        nodes_from_explicit(&vs)
+    } else {
+        nodes_from_db(&db, true /* include suspect */)?
     };
     if nodes.is_empty() { anyhow::bail!("gc: no volumes available"); }
 
@@ -112,130 +113,167 @@ pub async fn gc(args: GcArgs) -> anyhow::Result<()> {
     let tombstone_ttl = humantime::parse_duration(&args.tombstone_ttl)?;
     let sweep_tmp_age = humantime::parse_duration(&args.sweep_tmp_age)?;
 
-    // Semaphores
     let global = Arc::new(Semaphore::new(args.concurrency));
     let per_node: Arc<HashMap<String, Arc<Semaphore>>> =
         Arc::new(volumes.iter().map(|(id, _)| (id.clone(), Arc::new(Semaphore::new(args.per_node)))).collect());
 
-    // Sweep tmp/ on volumes
-    {
-        let mut tasks = FuturesUnordered::new();
-        for (id, base) in &volumes {
-            let url = format!("{}/admin/sweep_tmp?safe_age_secs={}", base, sweep_tmp_age.as_secs());
+    sweep_tmp_on_all(
+        &http, &volumes, &sweep_tmp_age, &args, &global, &per_node, &mut report).await?;
 
-            let _id = id.clone();
-            let dry = args.dry_run;
-            let http = http.clone();
+    clean_tombstones(
+        &http, &db, &volumes, &tombstone_ttl, &args, &global, &per_node, &mut report).await?;
 
-            let global_sem = global.clone();
-            let per_node_sem = per_node.get(id).unwrap().clone();
-
-            tasks.push(tokio::spawn(async move {
-                let _global_permit = global_sem.acquire().await.unwrap();
-                let _per_node_permit = per_node_sem.acquire().await.unwrap();
-
-                if dry { return Ok::<(u64,bool), anyhow::Error>((0, false)); }
-
-                let r = http.post(&url).send().await?.error_for_status()?;
-                let resp: SweepTmpResponse = r.json().await?;
-                Ok::<_, anyhow::Error>((resp.removed, true))
-            }));
-        }
-
-        while let Some(res) = tasks.next().await {
-            match res {
-                Ok(Ok((removed, counted))) => {
-                    if counted { report.tmp_swept_volumes += 1; }
-                    report.tmp_removed_total += removed;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // 2) Tombstone cleanup (with TTL)
-    {
-        let ttl_ms: i128 = tombstone_ttl.as_millis() as i128;
-        let now_ms = utc_now_ms();
-
-        for kv in db.iter() {
-            let (k, v) = kv?;
-            if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-            let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
-            let meta: Meta = serde_json::from_slice(&v)?;
-
-            if !matches!(meta.state, TxState::Tombstoned) { continue; }
-
-            report.tombstones_scanned += 1;
-            if now_ms - meta.created_ms < ttl_ms { continue; }
-            report.tombstones_past_ttl += 1;
-
-            // Fan-out deletes to all volumes (safe + idempotent)
-            let deleted_targets = delete_on_all(&http, &volumes, &key_enc, &args, &global, &per_node).await;
-            report.tombstone_deletes_sent += deleted_targets;
-
-            if args.purge_tombstone_meta && !args.dry_run {
-                db.delete(&format!("{}{}", META_KEY_PREFIX, key_enc))?;
-                report.tombstone_metas_purged += 1;
-            }
-        }
-    }
-
-    // 3) Optional cleanup of extraneous replicas and orphans
     if args.delete_extraneous || args.purge_orphans {
-        // Build in-memory set of keys with Committed meta + expected replicas
-        let mut committed: HashMap<String, HashSet<String>> = HashMap::new(); // key_enc -> expected node_ids
-        for kv in db.iter() {
-            let (k, v) = kv?;
-            if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-            let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
-            let meta: Meta = serde_json::from_slice(&v)?;
-            if matches!(meta.state, TxState::Committed) {
-                committed.insert(key_enc, meta.replicas.into_iter().collect());
-            }
-        }
-
-        // Walk volumes and inspect files
-        for (node_id, base) in &volumes {
-            let mut after: Option<String> = None;
-            loop {
-                let mut url = format!("{}/admin/list?limit=1000", base);
-                if let Some(a) = &after { url.push_str("&after="); url.push_str(a); }
-                let r = http.get(&url).send().await?.error_for_status()?;
-                let page: ListResponse = r.json().await?;
-
-                for key_enc in page.keys {
-                    match committed.get(&key_enc) {
-                        Some(expected) => {
-                            // extraneous if this node_id is not in expected
-                            if !expected.contains(node_id) {
-                                report.extraneous_found += 1;
-                                if args.delete_extraneous && !args.dry_run {
-                                    let del = format!("{}/internal/delete?key={}", base, key_enc);
-                                    let _ = http.post(&del).send().await;
-                                    report.extraneous_deleted += 1;
-                                }
-                            }
-                        }
-                        None => {
-                            // orphan (file without meta)
-                            report.orphans_found += 1;
-                            if args.purge_orphans && !args.dry_run {
-                                let del = format!("{}/internal/delete?key={}", base, key_enc);
-                                let _ = http.post(&del).send().await;
-                                report.orphans_deleted += 1;
-                            }
-                        }
-                    }
-                }
-
-                after = page.next_after;
-                if after.is_none() { break; }
-            }
-        }
+        clean_extraneous_and_orphans(
+            &http, &db, &volumes, &args, &mut report).await?;
     }
 
     info!("{}", report);
+
+    Ok(())
+}
+
+async fn sweep_tmp_on_all(
+    http: &Client,
+    volumes: &[(String, String)],
+    sweep_tmp_age: &Duration,
+    args: &GcArgs,
+    global: &Arc<Semaphore>,
+    per_node: &Arc<HashMap<String, Arc<Semaphore>>>,
+    report: &mut GcReport,
+) -> anyhow::Result<()> {
+    let mut tasks = FuturesUnordered::new();
+
+    for (id, base) in volumes {
+        let url = format!("{}/admin/sweep_tmp?safe_age_secs={}", base, sweep_tmp_age.as_secs());
+
+        let _id = id.clone();
+        let dry = args.dry_run;
+        let http = http.clone();
+
+        let global_sem = global.clone();
+        let per_node_sem = per_node.get(id).unwrap().clone();
+
+        tasks.push(tokio::spawn(async move {
+            let _global_permit = global_sem.acquire().await.unwrap();
+            let _per_node_permit = per_node_sem.acquire().await.unwrap();
+
+            if dry { return Ok::<(u64,bool), anyhow::Error>((0, false)); }
+
+            let r = http.post(&url).send().await?.error_for_status()?;
+            let resp: SweepTmpResponse = r.json().await?;
+            Ok::<_, anyhow::Error>((resp.removed, true))
+        }));
+    }
+
+    while let Some(res) = tasks.next().await {
+        match res {
+            Ok(Ok((removed, counted))) => {
+                if counted { report.tmp_swept_volumes += 1; }
+                report.tmp_removed_total += removed;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+async fn clean_tombstones(
+    http: &Client,
+    db: &KvDb,
+    volumes: &[(String, String)],
+    tombstone_ttl: &Duration,
+    args: &GcArgs,
+    global: &Arc<Semaphore>,
+    per_node: &Arc<HashMap<String, Arc<Semaphore>>>,
+    report: &mut GcReport,
+) -> anyhow::Result<()> {
+    let ttl_ms: i128 = tombstone_ttl.as_millis() as i128;
+    let now_ms = utc_now_ms();
+
+    for kv in db.iter() {
+        let (k, v) = kv?;
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
+        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        let meta: Meta = serde_json::from_slice(&v)?;
+
+        if !matches!(meta.state, TxState::Tombstoned) { continue; }
+
+        report.tombstones_scanned += 1;
+        if now_ms - meta.created_ms < ttl_ms { continue; }
+        report.tombstones_past_ttl += 1;
+
+        // Fan-out deletes to all volumes (safe + idempotent)
+        let deleted_targets = delete_on_all(&http, &volumes, &key_enc, &args, &global, &per_node).await;
+        report.tombstone_deletes_sent += deleted_targets;
+
+        if args.purge_tombstone_meta && !args.dry_run {
+            db.delete(&format!("{}{}", META_KEY_PREFIX, key_enc))?;
+            report.tombstone_metas_purged += 1;
+        }
+    }
+
+    Ok(())
+}
+
+async fn clean_extraneous_and_orphans(
+    http: &Client,
+    db: &KvDb,
+    volumes: &[(String, String)],
+    args: &GcArgs,
+    report: &mut GcReport,
+) -> anyhow::Result<()> {
+    // Build in-memory set of keys with Committed meta + expected replicas
+    let mut committed: HashMap<String, HashSet<String>> = HashMap::new(); // key_enc -> expected node_ids
+    for kv in db.iter() {
+        let (k, v) = kv?;
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
+        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        let meta: Meta = serde_json::from_slice(&v)?;
+        if matches!(meta.state, TxState::Committed) {
+            committed.insert(key_enc, meta.replicas.into_iter().collect());
+        }
+    }
+
+    // Walk volumes and inspect files
+    for (node_id, base) in volumes {
+        let mut after: Option<String> = None;
+        loop {
+            let mut url = format!("{}/admin/list?limit=1000", base);
+            if let Some(a) = &after { url.push_str("&after="); url.push_str(a); }
+            let r = http.get(&url).send().await?.error_for_status()?;
+            let page: ListResponse = r.json().await?;
+
+            for key_enc in page.keys {
+                match committed.get(&key_enc) {
+                    Some(expected) => {
+                        // extraneous if this node_id is not in expected
+                        if !expected.contains(node_id) {
+                            report.extraneous_found += 1;
+                            if args.delete_extraneous && !args.dry_run {
+                                let del = format!("{}/internal/delete?key={}", base, key_enc);
+                                let _ = http.post(&del).send().await;
+                                report.extraneous_deleted += 1;
+                            }
+                        }
+                    }
+                    None => {
+                        // orphan (file without meta)
+                        report.orphans_found += 1;
+                        if args.purge_orphans && !args.dry_run {
+                            let del = format!("{}/internal/delete?key={}", base, key_enc);
+                            let _ = http.post(&del).send().await;
+                            report.orphans_deleted += 1;
+                        }
+                    }
+                }
+            }
+
+            after = page.next_after;
+            if after.is_none() { break; }
+        }
+    }
 
     Ok(())
 }

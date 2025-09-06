@@ -69,15 +69,9 @@ pub async fn verify(args: VerifyArgs) -> anyhow::Result<()> {
 
     let report = Arc::new(VerifyReport::default());
 
-    match walk_db(&db, &http, &args, &report).await {
-        Ok(_) => {}
-        Err(e) => { return Err(anyhow::anyhow!("error in walk_db: {}", e)); }
-    }
+    walk_db(&db, &http, &args, &report).await?;
 
-    match walk_volumes(&db, &http, &args, &report).await {
-        Ok(_) => {}
-        Err(e) => { return Err(anyhow::anyhow!("error in walk_volumes: {}", e)); }
-    }
+    walk_volumes(&db, &http, &args, &report).await?;
 
     info!("{}", report);
 

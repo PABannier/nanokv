@@ -1,4 +1,3 @@
-use uuid::Uuid;
 use tracing::info;
 use clap::Parser;
 use std::fmt::Display;
@@ -13,15 +12,15 @@ use serde_json;
 use futures_util::{stream::FuturesUnordered};
 use futures_util::StreamExt;
 
-use common::schemas::BlobHead;
 use common::constants::{META_KEY_PREFIX};
 
+use crate::command::common::copy_one;
 use crate::core::{
     meta::{KvDb, Meta, TxState},
     placement::{choose_top_n_alive, rank_nodes},
-    node::{NodeInfo, discover_alive_nodes, build_explicit_volume_urls}
+    node::NodeInfo,
 };
-use crate::core::op::{prepare::retry_prepare, pull::retry_pull, commit::retry_commit};
+use crate::command::common::{nodes_from_db, nodes_from_explicit, probe_matches, probe_exists};
 
 #[derive(Parser, Debug, Clone)]
 pub struct RepairArgs {
@@ -89,9 +88,10 @@ pub async fn repair(args: RepairArgs) -> anyhow::Result<()> {
     let mut report = RepairReport::default();
 
     // Discover alive nodes from db or use explicit volume URLs
-    let nodes = match discover_alive_nodes(&db, args.include_suspect) {
-        Ok(n) => n,
-        Err(_) => { build_explicit_volume_urls(args.volumes) }
+    let nodes = if let Some(vs) = args.volumes.clone() {
+        nodes_from_explicit(&vs)
+    } else {
+        nodes_from_db(&db, args.include_suspect)?
     };
     if nodes.is_empty() { anyhow::bail!("no nodes to repair"); }
 
@@ -256,43 +256,4 @@ pub async fn repair(args: RepairArgs) -> anyhow::Result<()> {
     info!("{}", report);
 
     Ok(())
-}
-
-async fn copy_one(
-    http: &Client,
-    src: &NodeInfo,
-    dst: &NodeInfo,
-    key_enc: &str,
-    size: u64,
-    etag: &str,
-) -> anyhow::Result<()> {
-    let upload_id = format!("repair-{}", Uuid::new_v4());
-
-    // Prepare the destination node
-    retry_prepare(&http, &dst, key_enc, &upload_id).await?;
-
-    // Pull from the source node
-    let r = retry_pull(&http, &src, &dst, &upload_id, size, etag).await?;
-    if r.etag != etag || r.size != size {
-        return Err(anyhow::anyhow!("checksum mismatch"));
-    }
-
-    // Commit the destination node
-    retry_commit(&http, &dst, &upload_id, key_enc).await?;
-
-    Ok(())
-}
-
-async fn probe_exists(http: &Client, node: &NodeInfo, key_enc: &str) -> anyhow::Result<bool> {
-    let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
-    let r = http.get(&url).send().await?.error_for_status()?;
-    let h: BlobHead = r.json().await?;
-    Ok(h.exists)
-}
-
-async fn probe_matches(http: &Client, node: &NodeInfo, key_enc: &str, etag: &str, size: u64) -> anyhow::Result<bool> {
-    let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
-    let r = http.get(&url).send().await?.error_for_status()?;
-    let h: BlobHead = r.json().await?;
-    Ok(h.exists && h.size == size && (etag.is_empty() || h.etag.as_deref() == Some(etag)))
 }

@@ -6,7 +6,7 @@ use reqwest::Client;
 use std::{collections::{HashMap, HashSet}, sync::Arc, time::Duration};
 use futures_util::{stream::{FuturesUnordered}, StreamExt};
 
-use common::{file_utils::meta_key_for};
+use common::{file_utils::meta_key_for, url_utils::node_id_from_url};
 use common::schemas::{ListResponse, BlobHead};
 use common::time_utils::utc_now_ms;
 
@@ -66,7 +66,7 @@ pub async fn rebuild(args: RebuildArgs) -> anyhow::Result<()> {
         .tcp_keepalive(Duration::from_secs(30))
         .build()?;
 
-    let present = match scan_keys(&http, &args.nodes).await {
+    let present = match scan(&http, &args.nodes).await {
         Ok(p) => p,
         Err(e) => {
             error!("failed to scan keys: {}", e);
@@ -77,7 +77,7 @@ pub async fn rebuild(args: RebuildArgs) -> anyhow::Result<()> {
     let mut vol_ids: HashMap<String,String> = HashMap::new();
     for v in &args.nodes { vol_ids.insert(v.clone(), node_id_from_url(v)); }
 
-    let report = match reconcile_keys(&http, &db, &vol_ids, &present, &args).await {
+    let report = match reconcile(&http, &db, &vol_ids, &present, &args).await {
         Ok(r) => r,
         Err(e) => {
             error!("failed to reconcile keys: {}", e);
@@ -91,7 +91,7 @@ pub async fn rebuild(args: RebuildArgs) -> anyhow::Result<()> {
 }
 
 
-async fn scan_keys(http: &Client, volumes: &[String]) -> anyhow::Result<HashMap<String, HashSet<String>>> {
+async fn scan(http: &Client, volumes: &[String]) -> anyhow::Result<HashMap<String, HashSet<String>>> {
     let mut present : HashMap<String, HashSet<String>> = HashMap::new();
 
     for vol in volumes {
@@ -113,7 +113,7 @@ async fn scan_keys(http: &Client, volumes: &[String]) -> anyhow::Result<HashMap<
 }
 
 // For each key, collect size/etag from one or more vols and reconcile
-async fn reconcile_keys(
+async fn reconcile(
     http: &Client,
     db: &KvDb,
     vol_ids: &HashMap<String, String>,
@@ -225,9 +225,4 @@ async fn reconcile_keys(
     }
 
     Ok(report)
-}
-
-fn node_id_from_url(u: &str) -> String {
-    // simple: host:port as node id; or parse URL properly
-    u.trim_start_matches("http://").trim_start_matches("https://").to_string()
 }
