@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use std::path::PathBuf;
 use url::Url;
 use std::fmt::Display;
 use tracing::{info, warn};
@@ -8,7 +9,6 @@ use tokio::sync::Semaphore;
 use clap::Parser;
 use reqwest::Client;
 use std::time::Duration;
-use std::path::Path;
 use futures::stream::{self, StreamExt};
 use serde_json;
 
@@ -22,7 +22,7 @@ use crate::core::meta::{KvDb, Meta, TxState};
 pub struct VerifyArgs {
     /// RocksDB directory path
     #[arg(long)]
-    index: String,
+    index: PathBuf,
 
     /// List of node URLs
     #[arg(long, value_delimiter = ',')]
@@ -71,11 +71,11 @@ impl VerifyReport {
 impl Display for VerifyReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Verify report:")?;
-        writeln!(f, "  Scanned keys:     {}", self.scanned_keys)?;
-        writeln!(f, "  Under-replicated: {}", self.under_replicated)?;
-        writeln!(f, "  Corrupted:        {}", self.corrupted)?;
-        writeln!(f, "  Unindexed:        {}", self.unindexed)?;
-        writeln!(f, "  Should GC:        {}", self.should_gc)?;
+        writeln!(f, "  Scanned keys     = {}", self.scanned_keys)?;
+        writeln!(f, "  Under-replicated = {}", self.under_replicated)?;
+        writeln!(f, "  Corrupted        = {}", self.corrupted)?;
+        writeln!(f, "  Unindexed        = {}", self.unindexed)?;
+        writeln!(f, "  Should GC        = {}", self.should_gc)?;
         Ok(())
     }
 }
@@ -88,8 +88,8 @@ pub async fn verify(args: VerifyArgs) -> anyhow::Result<()> {
         bail!("--nodes must specify at least one node, e.g. nodeA=http://127.0.0.1:3001");
     }
 
-    let db = KvDb::open(&Path::new(&args.index))
-        .with_context(|| format!("opening RocksDB at {}", args.index))?;
+    let db = KvDb::open(&args.index)
+        .with_context(|| format!("opening RocksDB at {}", args.index.display()))?;
 
     let http = Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))

@@ -207,7 +207,7 @@ pub struct FaultQuery {
     pub latency_ms: Option<u64>,
 }
 
-/// POST /admin/fail/prepare?once=true → next prepare returns 500.
+/// POST /admin/fail/prepare?once=true -> next prepare returns 500.
 #[cfg(test)]
 pub async fn fail_prepare(
     Query(params): Query<FaultQuery>,
@@ -222,7 +222,7 @@ pub async fn fail_prepare(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/fail/pull?once=true → next pull returns 500 mid-stream.
+/// POST /admin/fail/pull?once=true -> next pull returns 500 mid-stream.
 #[cfg(test)]
 pub async fn fail_pull(
     Query(params): Query<FaultQuery>,
@@ -239,7 +239,7 @@ pub async fn fail_pull(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/fail/commit?once=true → next commit returns 500 or times out.
+/// POST /admin/fail/commit?once=true -> next commit returns 500 or times out.
 #[cfg(test)]
 pub async fn fail_commit(
     Query(params): Query<FaultQuery>,
@@ -259,7 +259,7 @@ pub async fn fail_commit(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/fail/read_tmp?once=true → next read_tmp returns 500.
+/// POST /admin/fail/read_tmp?once=true -> next read_tmp returns 500.
 #[cfg(test)]
 pub async fn fail_read_tmp(
     Query(params): Query<FaultQuery>,
@@ -274,7 +274,7 @@ pub async fn fail_read_tmp(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/fail/etag_mismatch?once=true → next pull reports wrong etag.
+/// POST /admin/fail/etag_mismatch?once=true -> next pull reports wrong etag.
 #[cfg(test)]
 pub async fn fail_etag_mismatch(
     Query(params): Query<FaultQuery>,
@@ -289,7 +289,7 @@ pub async fn fail_etag_mismatch(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/inject/latency?latency_ms=1000 → inject latency into all operations
+/// POST /admin/inject/latency?latency_ms=1000 -> inject latency into all operations
 #[cfg(test)]
 pub async fn inject_latency(
     Query(params): Query<FaultQuery>,
@@ -301,7 +301,7 @@ pub async fn inject_latency(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/pause → pause all volume operations
+/// POST /admin/pause -> pause all volume operations
 #[cfg(test)]
 pub async fn pause_server(
     State(ctx): State<VolumeState>,
@@ -310,7 +310,7 @@ pub async fn pause_server(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/resume → resume all volume operations
+/// POST /admin/resume -> resume all volume operations
 #[cfg(test)]
 pub async fn resume_server(
     State(ctx): State<VolumeState>,
@@ -319,7 +319,7 @@ pub async fn resume_server(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/kill → kill the volume server (simulate crash)
+/// POST /admin/kill -> kill the volume server (simulate crash)
 #[cfg(test)]
 pub async fn kill_server(
     State(ctx): State<VolumeState>,
@@ -328,7 +328,7 @@ pub async fn kill_server(
     Ok(StatusCode::OK)
 }
 
-/// POST /admin/reset → reset all fault injection flags
+/// POST /admin/reset -> reset all fault injection flags
 #[cfg(test)]
 pub async fn reset_faults(
     State(ctx): State<VolumeState>,

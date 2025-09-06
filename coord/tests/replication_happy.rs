@@ -21,7 +21,7 @@ async fn test_replicated_write_happy_path_n3() -> anyhow::Result<()> {
 
     let key = "test-key-1";
     
-    // Confirm placement for key1 → debug/placement/key1 returns 3 node_ids [H,F1,F2]
+    // Confirm placement for key1 -> debug/placement/key1 returns 3 node_ids [H,F1,F2]
     let expected_replicas = test_placement_n(key, &list_nodes(&client, coord.url()).await?, 3);
     assert_eq!(expected_replicas.len(), 3, "Should have 3 replicas");
     
@@ -91,7 +91,7 @@ async fn test_replicated_write_happy_path_n3() -> anyhow::Result<()> {
 
     println!("GET operations successful, testing DELETE");
 
-    // DELETE /key1: 204; meta → Tombstoned; file removed on all 3
+    // DELETE /key1: 204; meta -> Tombstoned; file removed on all 3
     let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT, "DELETE should return 204");
 

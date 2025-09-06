@@ -68,7 +68,7 @@ async fn test_heartbeat_status_transitions() -> anyhow::Result<()> {
     let mut volume = TestVolume::new(coord.url().to_string(), "vol-1".to_string()).await?;
     volume.join_coordinator().await?;
     
-    // Start heartbeat loop → assert Alive after a couple intervals
+    // Start heartbeat loop -> assert Alive after a couple intervals
     volume.start_heartbeat(500)?;
     sleep(Duration::from_millis(1000)).await;
     
@@ -90,7 +90,7 @@ async fn test_heartbeat_status_transitions() -> anyhow::Result<()> {
         Ok(nodes[0].status == NodeStatus::Down)
     }).await?;
     
-    // Restart heartbeat loop → assert node returns to Alive
+    // Restart heartbeat loop -> assert node returns to Alive
     volume.start_heartbeat(500)?;
     wait_until(3000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;

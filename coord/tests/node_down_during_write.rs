@@ -7,7 +7,7 @@ use coord::core::node::NodeStatus;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_follower_down_during_write_abort() -> anyhow::Result<()> {
-    // Test follower node down during write → abort
+    // Test follower node down during write -> abort
     let coord = TestCoordinator::new_with_replicas(3).await?;
     let client = Client::new();
 
@@ -101,7 +101,7 @@ async fn test_follower_down_during_write_abort() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_head_down_during_write_abort() -> anyhow::Result<()> {
-    // Test head node down during write → abort
+    // Test head node down during write -> abort
     let coord = TestCoordinator::new_with_replicas(3).await?;
     let client = Client::new();
 

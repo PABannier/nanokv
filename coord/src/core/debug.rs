@@ -16,7 +16,7 @@ pub struct PlacementResponse {
     pub replicas: Vec<String>,
 }
 
-/// GET /debug/placement/:key → {"replicas": ["nodeA","nodeB","nodeC"]} in HRW order.
+/// GET /debug/placement/:key -> {"replicas": ["nodeA","nodeB","nodeC"]} in HRW order.
 /// 
 /// This endpoint is only available in test builds and shows the deterministic
 /// placement order for a given key according to HRW (Highest Random Weight) hashing.

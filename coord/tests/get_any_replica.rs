@@ -35,7 +35,7 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
 
     println!("Data replicated to all volumes, now testing reads with node failures");
 
-    // Stop F2's server and heartbeats → coordinator marks it Down
+    // Stop F2's server and heartbeats -> coordinator marks it Down
     let f2_volume = volumes.remove(2); // Remove third volume (index 2)
     let f2_node_id = f2_volume.state.node_id.clone();
     println!("Stopping volume: {}", f2_node_id);

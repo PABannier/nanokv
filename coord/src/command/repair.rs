@@ -59,13 +59,13 @@ struct RepairReport {
 impl std::fmt::Display for RepairReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Repair report:")?;
-        writeln!(f, "  Scanned: {}", self.scanned)?;
-        writeln!(f, "  Planned copies: {}", self.planned_copies)?;
-        writeln!(f, "  Succeeded: {}", self.succeeded)?;
-        writeln!(f, "  Failed: {}", self.failed)?;
-        writeln!(f, "  Updated metas: {}", self.updated_metas)?;
-        writeln!(f, "  Skipped tombstones: {}", self.skipped_tombstones)?;
-        writeln!(f, "  Skipped no source: {}", self.skipped_no_source)?;
+        writeln!(f, "  Scanned:           = {}", self.scanned)?;
+        writeln!(f, "  Planned copies     = {}", self.planned_copies)?;
+        writeln!(f, "  Succeeded:         = {}", self.succeeded)?;
+        writeln!(f, "  Failed:            = {}", self.failed)?;
+        writeln!(f, "  Updated metas      = {}", self.updated_metas)?;
+        writeln!(f, "  Skipped tombstones = {}", self.skipped_tombstones)?;
+        writeln!(f, "  Skipped no source  = {}", self.skipped_no_source)?;
         Ok(())
     }
 }
