@@ -52,10 +52,6 @@ pub struct RebalanceArgs {
     #[arg(long, default_value_t = 2)]
     per_node: usize,
 
-    /// Global bandwidth cap (bytes/sec). 0 = unlimited.
-    #[arg(long, default_value_t = 0)]
-    bytes_per_sec: u64,
-
     /// Dry-run: compute/explain, make no changes
     #[arg(long, default_value_t = false)]
     dry_run: bool,
@@ -67,7 +63,6 @@ struct RebalanceCfg {
     pub replicas: usize,
     pub concurrency: usize,
     pub per_node: usize,
-    pub bytes_per_sec: u64,
     pub dry_run: bool,
 }
 
@@ -136,7 +131,6 @@ pub async fn rebalance(args: RebalanceArgs) -> Result<()> {
         replicas: args.replicas,
         concurrency: args.concurrency,
         per_node: args.per_node,
-        bytes_per_sec: args.bytes_per_sec,
         dry_run: args.dry_run,
     };
 
