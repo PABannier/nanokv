@@ -1,3 +1,4 @@
+use anyhow::{Result, bail};
 use reqwest::Client;
 use uuid::Uuid;
 
@@ -11,7 +12,7 @@ use crate::core::node::{NodeInfo, NodeStatus};
 use crate::core::meta::KvDb;
 
 
-pub fn nodes_from_db(db: &KvDb, include_suspect: bool) -> anyhow::Result<Vec<NodeInfo>> {
+pub fn nodes_from_db(db: &KvDb, include_suspect: bool) -> Result<Vec<NodeInfo>> {
     let mut nodes = Vec::new();
     for kv in db.iter() {
         let (k, v) = kv?;
@@ -44,14 +45,14 @@ pub fn nodes_from_explicit(volume_urls: &[String]) -> Vec<NodeInfo> {
     nodes
 }
 
-pub async fn probe_exists(http: &Client, node: &NodeInfo, key_enc: &str) -> anyhow::Result<bool> {
+pub async fn probe_exists(http: &Client, node: &NodeInfo, key_enc: &str) -> Result<bool> {
     let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
     let r = http.get(&url).send().await?.error_for_status()?;
     let h: BlobHead = r.json().await?;
     Ok(h.exists)
 }
 
-pub async fn probe_matches(http: &Client, node: &NodeInfo, key_enc: &str, etag: &str, size: u64) -> anyhow::Result<bool> {
+pub async fn probe_matches(http: &Client, node: &NodeInfo, key_enc: &str, etag: &str, size: u64) -> Result<bool> {
     let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
     let r = http.get(&url).send().await?.error_for_status()?;
     let h: BlobHead = r.json().await?;
@@ -65,19 +66,17 @@ pub async fn copy_one(
     key_enc: &str,
     size: u64,
     etag: &str,
-) -> anyhow::Result<()> {
-    let upload_id = format!("repair-{}", Uuid::new_v4());
+    prefix: &str,
+) -> Result<()> {
+    let upload_id = format!("{}-{}", prefix, Uuid::new_v4());
 
-    // Prepare the destination node
     retry_prepare(&http, &dst, key_enc, &upload_id).await?;
 
-    // Pull from the source node
     let r = retry_pull(&http, &src, &dst, &upload_id, size, etag).await?;
     if r.etag != etag || r.size != size {
-        return Err(anyhow::anyhow!("checksum mismatch"));
+        bail!("size/checksum mismatch on dst {}", dst.node_id);
     }
 
-    // Commit the destination node
     retry_commit(&http, &dst, &upload_id, key_enc).await?;
 
     Ok(())

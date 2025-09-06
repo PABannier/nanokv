@@ -195,7 +195,7 @@ pub async fn repair(args: RepairArgs) -> anyhow::Result<()> {
                 let _dst_permit = per_node_sems.get(&dst.node_id).unwrap().acquire().await.unwrap();
 
                 // Execute copy (prepare -> pull -> commit)
-                copy_one(&http, &src, &dst, &key, size, &etag).await
+                copy_one(&http, &src, &dst, &key, size, &etag, "repair").await
             }));
         }
     }

@@ -1,10 +1,11 @@
-use anyhow::anyhow;
 use axum::extract::{Path, State};
 use serde::Serialize;
 
 use crate::core::state::CoordinatorState;
 use common::api_error::ApiError;
 
+#[cfg(test)]
+use anyhow::anyhow;
 #[cfg(test)]
 use crate::core::placement::choose_top_n_alive;
 #[cfg(test)]
