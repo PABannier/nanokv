@@ -23,54 +23,54 @@ use crate::core::meta::{KvDb, Meta, TxState};
 #[derive(Parser, Debug, Clone)]
 pub struct GcArgs {
     #[arg(long)]
-    index: PathBuf,
+    pub index: PathBuf,
 
     /// If omitted, use node registry (node:*). Otherwise, explicit volume URLs
     #[arg(long, value_delimiter = ',')]
-    volumes: Option<Vec<String>>,
+    pub volumes: Option<Vec<String>>,
 
     /// Tombstone TTL (e.g., "7d", "12h")
     #[arg(long, default_value = "7d")]
-    tombstone_ttl: String,
+    pub tombstone_ttl: String,
 
     /// Purge tombstone metas after deletes
     #[arg(long, default_value_t = false)]
-    purge_tombstone_meta: bool,
+    pub purge_tombstone_meta: bool,
 
     /// Sweep tmp files older than this age (e.g., "1h")
     #[arg(long, default_value = "1h")]
-    sweep_tmp_age: String,
+    pub sweep_tmp_age: String,
 
     /// Also delete extra copies not in meta.replicas
     #[arg(long, default_value_t = false)]
-    delete_extraneous: bool,
+    pub delete_extraneous: bool,
 
     /// Also delete files without meta
     #[arg(long, default_value_t = false)]
-    purge_orphans: bool,
+    pub purge_orphans: bool,
 
     /// Delete tombstones on all nodes (not only those in meta.replicas)
     #[arg(long, default_value_t = false)]
-    broadcast_deletes: bool,
+    pub broadcast_deletes: bool,
 
     /// Force purge metas even if deletes fail
     #[arg(long, default_value_t = false)]
-    force_purge: bool,
+    pub force_purge: bool,
 
     /// Concurrency controls
     #[arg(long, default_value_t = 16)]
-    concurrency: usize,
+    pub concurrency: usize,
 
     #[arg(long, default_value_t = 2)]
-    per_node: usize,
+    pub per_node: usize,
 
     /// Per-request timeout (seconds)
     #[arg(long, default_value_t = 5)]
-    http_timeout_secs: u64,
+    pub http_timeout_secs: u64,
 
     /// Dry run: report only
     #[arg(long, default_value_t = false)]
-    dry_run: bool,
+    pub dry_run: bool,
 }
 
 #[derive(Default)]

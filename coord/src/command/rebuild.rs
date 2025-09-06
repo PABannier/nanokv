@@ -20,27 +20,27 @@ use crate::core::meta::{KvDb, Meta, TxState};
 pub struct RebuildArgs {
     /// RocksDB directory path
     #[arg(long)]
-    index: PathBuf,
+    pub index: PathBuf,
 
     /// List of volume base URLs (internal or public)
     #[arg(long, value_delimiter = ',')]
-    nodes: Vec<String>,
+    pub nodes: Vec<String>,
 
     /// Perform a dry run without writing metas
     #[arg(long, default_value_t = false)]
-    dry_run: bool,
+    pub dry_run: bool,
 
     /// Ask volumes to compute etag (deep). Slower.
     #[arg(long, default_value_t = false)]
-    deep: bool,
+    pub deep: bool,
 
     /// Max concurrent key reconciliations
     #[arg(long, default_value_t = 16)]
-    concurrency: usize,
+    pub concurrency: usize,
 
     /// Per-request timeout, seconds
     #[arg(long, default_value_t = 5)]
-    http_timeout_secs: u64,
+    pub http_timeout_secs: u64,
 }
 
 type Variant = (String /*volume_url*/, u64 /*size*/, Option<String> /*etag*/);

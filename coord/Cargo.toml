@@ -50,3 +50,4 @@ hyper = "1.0"
 hyper-util = "0.1"
 tokio-stream = "0.1"
 volume = { path = "../volume" }
+hex = "0.4"

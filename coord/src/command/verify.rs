@@ -22,31 +22,31 @@ use crate::core::meta::{KvDb, Meta, TxState};
 pub struct VerifyArgs {
     /// RocksDB directory path
     #[arg(long)]
-    index: PathBuf,
+    pub index: PathBuf,
 
     /// List of node URLs
     #[arg(long, value_delimiter = ',')]
-    nodes: Vec<String>,
+    pub nodes: Vec<String>,
 
     /// Fix inconsistencies
     #[arg(long, default_value_t = false)]
-    fix: bool,
+    pub fix: bool,
 
     /// Perform deep verification (slower)
     #[arg(long, default_value_t = false)]
-    deep: bool,
+    pub deep: bool,
 
     /// Maximum concurrent operations
     #[arg(long, default_value_t = 16)]
-    concurrency: usize,
+    pub concurrency: usize,
 
     /// Max concurrent ops per node
     #[arg(long, default_value_t = 4)]
-    per_node: usize,
+    pub per_node: usize,
 
     /// Request timeout (seconds) for control-plane calls
     #[arg(long, default_value_t = 5)]
-    http_timeout_secs: u64,
+    pub http_timeout_secs: u64,
 }
 
 #[derive(Debug, Default, Clone)]

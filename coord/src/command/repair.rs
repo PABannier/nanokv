@@ -24,25 +24,25 @@ const J_REPAIR_PREFIX: &str = "repair:"; // repair:{key}:{dst} -> Planned|InFlig
 #[derive(Parser, Debug, Clone)]
 pub struct RepairArgs {
     #[arg(long)]
-    index: PathBuf,
+    pub index: PathBuf,
 
     #[arg(long, value_delimiter = ',')]
-    volumes: Option<Vec<String>>,
+    pub volumes: Option<Vec<String>>,
 
     #[arg(long, default_value_t = 3)]
-    n_replicas: usize,
+    pub n_replicas: usize,
 
     #[arg(long, default_value_t = 8)]
-    concurrency: usize,
+    pub concurrency: usize,
 
     #[arg(long, default_value_t = 2)]
-    concurrency_per_node: usize,
+    pub concurrency_per_node: usize,
 
     #[arg(long, default_value_t = false)]
-    include_suspect: bool,
+    pub include_suspect: bool,
 
     #[arg(long, default_value_t = false)]
-    dry_run: bool,
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Default)]
