@@ -133,11 +133,11 @@ impl TestCoordinator {
     }
 
     pub async fn shutdown(self) -> Result<()> {
-        self.server.shutdown_tx.send(true);
+        let _ = self.server.shutdown_tx.send(true);
         self.sweeper_handle.abort();
         self.server.handle.abort();
-        self.server.handle.await;
-        self.sweeper_handle.await;
+        let _ = self.server.handle.await;
+        let _ = self.sweeper_handle.await;
         Ok(())
     }
 
@@ -478,7 +478,7 @@ pub async fn follow_redirect_get(
 pub fn meta_of(db: &KvDb, key: &str) -> Result<Option<Meta>> {
     use common::file_utils::meta_key_for;
     let meta_key = meta_key_for(&common::file_utils::sanitize_key(key)?);
-    Ok(db.get(&meta_key)?)
+    db.get(&meta_key)
 }
 
 /// Check which volumes have the blob file for a key

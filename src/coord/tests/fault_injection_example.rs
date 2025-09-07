@@ -41,7 +41,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     // Test 1: Debug placement endpoint
     println!("=== Test 1: Debug Placement ===");
     let placement_resp = client
-        .get(&format!("{}/debug/placement/test-key", coord.url()))
+        .get(format!("{}/debug/placement/test-key", coord.url()))
         .send()
         .await?;
     
@@ -64,7 +64,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     
     // Inject failure on one volume
     let fail_resp = client
-        .post(&format!("{}/admin/fail/prepare?once=true", vol1.state.internal_url))
+        .post(format!("{}/admin/fail/prepare?once=true", vol1.state.internal_url))
         .send()
         .await?;
     
@@ -87,7 +87,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     println!("\n=== Test 4: Pull Failure Injection ===");
     
     let fail_resp = client
-        .post(&format!("{}/admin/fail/pull?once=true", vol2.state.internal_url))
+        .post(format!("{}/admin/fail/pull?once=true", vol2.state.internal_url))
         .send()
         .await?;
         
@@ -107,7 +107,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     println!("\n=== Test 5: Commit Failure Injection ===");
     
     let fail_resp = client
-        .post(&format!("{}/admin/fail/commit?once=true", vol3.state.internal_url))
+        .post(format!("{}/admin/fail/commit?once=true", vol3.state.internal_url))
         .send()
         .await?;
         
@@ -127,7 +127,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     println!("\n=== Test 6: Latency Injection ===");
     
     let latency_resp = client
-        .post(&format!("{}/admin/inject/latency?latency_ms=1000", vol1.state.internal_url))
+        .post(format!("{}/admin/inject/latency?latency_ms=1000", vol1.state.internal_url))
         .send()
         .await?;
         
@@ -155,7 +155,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     
     // Pause vol1
     let pause_resp = client
-        .post(&format!("{}/admin/pause", vol1.state.internal_url))
+        .post(format!("{}/admin/pause", vol1.state.internal_url))
         .send()
         .await?;
         
@@ -173,7 +173,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
         
         // Resume vol1
         let resume_resp = client
-            .post(&format!("{}/admin/resume", vol1.state.internal_url))
+            .post(format!("{}/admin/resume", vol1.state.internal_url))
             .send()
             .await?;
             
@@ -187,7 +187,7 @@ async fn test_fault_injection_demo() -> anyhow::Result<()> {
     
     for vol in [&vol1, &vol2, &vol3] {
         let reset_resp = client
-            .post(&format!("{}/admin/reset", vol.state.internal_url))
+            .post(format!("{}/admin/reset", vol.state.internal_url))
             .send()
             .await?;
             
@@ -230,7 +230,7 @@ async fn test_etag_mismatch_injection() -> anyhow::Result<()> {
     
     // Inject etag mismatch on vol2
     let fail_resp = client
-        .post(&format!("{}/admin/fail/etag_mismatch?once=true", vol2.state.internal_url))
+        .post(format!("{}/admin/fail/etag_mismatch?once=true", vol2.state.internal_url))
         .send()
         .await?;
         
@@ -282,7 +282,7 @@ async fn test_volume_kill_injection() -> anyhow::Result<()> {
     
     // Kill vol1
     let kill_resp = client
-        .post(&format!("{}/admin/kill", vol1.state.internal_url))
+        .post(format!("{}/admin/kill", vol1.state.internal_url))
         .send()
         .await?;
         
