@@ -49,14 +49,27 @@ pub struct VerifyArgs {
     pub http_timeout_secs: u64,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct VerifyReport {
+#[derive(Debug, Clone)]
+struct VerifyReport {
     pub scanned_keys: usize,
     pub under_replicated: usize,
     pub corrupted: usize,            // exists but size/etag mismatch
     pub unindexed: usize,            // file exists but no meta
     pub should_gc: usize,            // file exists + meta tombstoned
 }
+
+impl VerifyReport {
+    pub fn new(scanned_keys: usize) -> Self {
+        Self {
+            scanned_keys,
+            under_replicated: 0,
+            corrupted: 0,
+            unindexed: 0,
+            should_gc: 0,
+        }
+    }
+}
+
 
 impl VerifyReport {
     fn merge_from(&mut self, other: &Self) {
@@ -104,7 +117,7 @@ pub async fn verify(args: VerifyArgs) -> anyhow::Result<()> {
             .collect(),
     );
 
-    let mut report = VerifyReport::default();
+    let mut report = VerifyReport::new(0);
 
     let db_part =
         walk_db(&db, &http, &nodes, args.deep, args.concurrency, args.http_timeout_secs, per_node.clone()).await?;
@@ -151,8 +164,7 @@ async fn walk_db(
             let per_node = per_node.clone();
 
             async move {
-                let mut local = VerifyReport::default();
-                local.scanned_keys = 1;
+                let mut local = VerifyReport::new(1);
 
                 // Iterate expected replicas; resolve node_id -> Url
                 let expected: Vec<&String> = meta.replicas.iter().collect();
@@ -249,7 +261,7 @@ async fn walk_db(
         .collect::<Vec<_>>()
         .await;
 
-    let mut acc = VerifyReport::default();
+    let mut acc = VerifyReport::new(0);
     for r in results {
         match r {
             Ok(local) => acc.merge_from(&local),
@@ -266,7 +278,7 @@ async fn walk_db(
 /// Walk volumes (filesystem view) and find:
 /// - files with no meta (unindexed)
 /// - files that should be GC'ed (meta is tombstoned)
-/// If --fix is set, **delete** tombstoned files (safe GC); we do NOT auto-create metas for unindexed (no resurrection in verify).
+// If --fix is set, **delete** tombstoned files (safe GC); we do NOT auto-create metas for unindexed (no resurrection in verify).
 async fn walk_volumes(
     db: &KvDb,
     http: &Client,
@@ -286,7 +298,7 @@ async fn walk_volumes(
             let db = db.clone();
 
             async move {
-                let mut local = VerifyReport::default();
+                let mut local = VerifyReport::new(0);
 
                 let mut after: Option<String> = None;
                 loop {
@@ -353,7 +365,7 @@ async fn walk_volumes(
         .collect::<Vec<_>>()
         .await;
 
-    let mut acc = VerifyReport::default();
+    let mut acc = VerifyReport::new(0);
     for r in results {
         match r {
             Ok(local) => acc.merge_from(&local),

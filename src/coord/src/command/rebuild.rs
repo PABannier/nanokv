@@ -99,9 +99,7 @@ pub async fn rebuild(args: RebuildArgs) -> Result<()> {
         &db,
         &vol_ids,
         &present,
-        args.deep,
-        args.dry_run,
-        args.concurrency,
+        &args,
         Duration::from_secs(args.http_timeout_secs),
     )
     .await
@@ -163,9 +161,7 @@ async fn reconcile(
     db: &KvDb,
     vol_ids: &HashMap<String, String>, // base_url -> node_id
     present: &HashMap<String, HashSet<String>>,
-    deep: bool,
-    dry_run: bool,
-    concurrency: usize,
+    args: &RebuildArgs,
     timeout: Duration,
 ) -> Result<RebuildReport> {
     let mut report = RebuildReport {
@@ -203,7 +199,7 @@ async fn reconcile(
                     {
                         let mut qp = u.query_pairs_mut();
                         qp.append_pair("key", &key_enc);
-                        qp.append_pair("deep", if deep { "true" } else { "false" });
+                        qp.append_pair("deep", if args.deep { "true" } else { "false" });
                     }
 
                     // tiny retry (3 attempts) for transient issues
@@ -233,7 +229,7 @@ async fn reconcile(
                     match head {
                         Some(h) if h.exists => {
                             variants.push((v.clone(), h.size, h.etag));
-                            if !deep { break; } // fast path: first good size is enough
+                            if !args.deep { break; } // fast path: first good size is enough
                         }
                         Some(_) => { /* exists=false: ignore */ }
                         None => { probe_errs += 1; }
@@ -271,7 +267,7 @@ async fn reconcile(
                     .filter_map(|(vurl, _, _)| vol_ids.get(vurl).cloned())
                     .collect();
 
-                if !dry_run {
+                if !args.dry_run {
                     let meta = Meta {
                         state: TxState::Committed,
                         size,
@@ -286,7 +282,7 @@ async fn reconcile(
                 Ok((Outcome::Written, key_enc))
             }
         })
-        .buffer_unordered(concurrency)
+        .buffer_unordered(args.concurrency)
         .collect::<Vec<_>>()
         .await;
 

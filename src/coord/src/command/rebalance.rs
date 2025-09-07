@@ -175,7 +175,7 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
             let src = meta.replicas.iter().find(|id| present.contains(*id))
                 .cloned()
                 .or_else(|| meta.replicas.first().cloned());
-            
+
             if let Some(src) = src {
                 moves.push(Move {
                     key_enc: key_enc.clone(),
@@ -196,11 +196,21 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
 }
 
 // Execution report
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ExecReport {
     pub total: usize,
     pub done: usize,
     pub failed: usize,
+}
+
+impl ExecReport {
+    pub fn new(total: usize) -> Self {
+        Self {
+            total,
+            done: 0,
+            failed: 0,
+        }
+    }
 }
 
 async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) -> Result<ExecReport> {
@@ -216,8 +226,7 @@ async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) 
     );
     let global_sem = Arc::new(Semaphore::new(cfg.concurrency));
 
-    let mut report = ExecReport::default();
-    report.total = plan.moves.len();
+    let mut report = ExecReport::new(plan.moves.len());
 
     let mut tasks = FuturesUnordered::new();
 

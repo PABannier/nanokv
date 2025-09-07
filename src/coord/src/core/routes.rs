@@ -270,8 +270,6 @@ pub async fn heartbeat(
     Ok(StatusCode::OK)
 }
 
-/// Utility functions
-
 fn ensure_write_once(ctx: &CoordinatorState, meta_key: &str) -> Result<(), ApiError> {
     if let Some(existing) = ctx.db.get::<Meta>(meta_key)? {
         match existing.state {
