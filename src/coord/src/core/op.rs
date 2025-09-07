@@ -54,7 +54,7 @@ pub mod meta {
     use crate::core::meta::{Meta, KvDb};
     use crate::core::node::NodeInfo;
 
-    pub fn write_pending_meta(db: &KvDb, meta_key: &str, replicas: &Vec<NodeInfo>) -> Result<String, ApiError> {
+    pub fn write_pending_meta(db: &KvDb, meta_key: &str, replicas: &[NodeInfo]) -> Result<String, ApiError> {
         let upload_id = Uuid::new_v4().to_string();
 
         let replica_ids = replicas
