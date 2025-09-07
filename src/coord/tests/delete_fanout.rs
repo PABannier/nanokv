@@ -130,7 +130,7 @@ async fn test_delete_with_some_replicas_down() -> anyhow::Result<()> {
     wait_until(8000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;
         let killed_node = nodes.iter().find(|n| n.node_id == killed_node_id);
-        Ok(killed_node.map_or(true, |n| n.status != NodeStatus::Alive))
+        Ok(killed_node.is_none_or(|n| n.status != NodeStatus::Alive))
     }).await?;
 
     println!("Node marked down, performing DELETE");

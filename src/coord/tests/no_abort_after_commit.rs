@@ -163,7 +163,7 @@ async fn test_no_abort_after_head_commits() -> anyhow::Result<()> {
         }
     }
 
-    let payload = generate_random_bytes(1 * 1024 * 1024); // 1 MiB
+    let payload = generate_random_bytes(1024 * 1024); // 1 MiB
     let expected_etag = blake3_hex(&payload);
 
     println!("Starting PUT where head commits but followers initially fail");

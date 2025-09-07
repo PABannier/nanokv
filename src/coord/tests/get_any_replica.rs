@@ -45,7 +45,7 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
     wait_until(8000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;
         let f2_node = nodes.iter().find(|n| n.node_id == f2_node_id);
-        Ok(f2_node.map_or(true, |n| n.status != NodeStatus::Alive))
+        Ok(f2_node.is_none_or(|n| n.status != NodeStatus::Alive))
     }).await?;
 
     println!("F2 marked as down, testing GET operations");
@@ -92,7 +92,7 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
     wait_until(5000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;
         let f2_node = nodes.iter().find(|n| n.node_id == f2_node_id);
-        Ok(f2_node.map_or(false, |n| n.status == NodeStatus::Alive))
+        Ok(f2_node.is_some_and(|n| n.status == NodeStatus::Alive))
     }).await?;
 
     println!("F2 restarted and alive, testing GET can use it again");
@@ -103,13 +103,12 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
         let (get_status, location) = get_redirect_location(&no_redirect_client, coord.url(), key).await?;
         assert_eq!(get_status, reqwest::StatusCode::FOUND, "GET should still work after F2 restart");
 
-        if let Some(location_url) = location {
-            if location_url.contains(&f2_node_id) {
+        if let Some(location_url) = location 
+            && location_url.contains(&f2_node_id) {
                 found_f2_redirect = true;
                 println!("GET {} redirected to restarted F2", i);
                 break;
             }
-        }
 
         // Small delay between attempts
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
