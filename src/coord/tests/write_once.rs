@@ -2,6 +2,7 @@ use reqwest::Client;
 
 mod common;
 use ::common::file_utils;
+use ::common::key_utils;
 use common::*;
 use coord::core::meta::{Meta, TxState};
 use coord::core::node::NodeStatus;
@@ -39,7 +40,7 @@ async fn test_write_once_semantics() -> anyhow::Result<()> {
     assert_eq!(status2, reqwest::StatusCode::CONFLICT);
 
     // Assert RocksDB meta remains correct and only one blob exists
-    let meta_key = file_utils::meta_key_for("same%2Dkey"); // percent-encoded
+    let meta_key = key_utils::meta_key_for("same%2Dkey"); // percent-encoded
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some(), "Meta not found after duplicate PUT");
 
@@ -82,7 +83,7 @@ async fn test_write_once_with_pending_state() -> anyhow::Result<()> {
     let payload = b"test data for pending write-once".to_vec();
 
     // Artificially create a Pending state in the DB (simulating an interrupted upload)
-    let meta_key = file_utils::meta_key_for("pending%2Dkey");
+    let meta_key = key_utils::meta_key_for("pending%2Dkey");
     let pending_meta = Meta::pending("test-upload-id".to_string(), vec!["vol-1".to_string()]);
     coord.state.db.put(&meta_key, &pending_meta)?;
 

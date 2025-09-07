@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::state::VolumeState;
-use common::api_error::ApiError;
+use common::error::ApiError;
 
 /// Fault injection state for testing
 #[derive(Debug, Default)]

@@ -65,7 +65,7 @@ pub async fn probe_matches(
     size: u64,
 ) -> Result<bool> {
     let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
-    let r = http.get(&url).send().await?.error_for_status()?;
+    let r = http.get(&url).send().await?;
     let h: BlobHead = r.json().await?;
     Ok(h.exists && h.size == size && (etag.is_empty() || h.etag.as_deref() == Some(etag)))
 }

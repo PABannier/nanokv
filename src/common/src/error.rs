@@ -6,6 +6,16 @@ use reqwest;
 use std::io;
 
 #[derive(thiserror::Error, Debug)]
+pub enum KeyError {
+    #[error("invalid percent-encoding")]
+    BadEncoding,
+    #[error("invalid key length")]
+    Length,
+    #[error("key contains forbidden characters")]
+    Forbidden,
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum ApiError {
     #[error("conflict: key already exists")]
     KeyAlreadyExists,
@@ -32,6 +42,8 @@ pub enum ApiError {
     #[error("upstream status")]
     UpstreamStatus(reqwest::StatusCode),
     #[error(transparent)]
+    Key(#[from] KeyError),
+    #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]
     Any(#[from] anyhow::Error),
@@ -52,6 +64,7 @@ impl IntoResponse for ApiError {
             ApiError::UnknownNode => StatusCode::NOT_FOUND,
             ApiError::UpstreamReq(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::UpstreamStatus(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Key(_) => StatusCode::BAD_REQUEST,
             ApiError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Any(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };

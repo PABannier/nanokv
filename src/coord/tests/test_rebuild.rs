@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::file_utils::{meta_key_for, sanitize_key};
+use ::common::key_utils::{meta_key_for, Key};
 use common::*;
 
 use coord::command::rebuild::{RebuildArgs, rebuild};
@@ -26,13 +26,14 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
 
     // Put a blob through the coordinator to create it on both volumes
     let content_a = b"test content A";
-    let key = "test-key-a";
+    let raw_key = "test-key-a";
     let (status, _etag, size) =
-        put_via_coordinator(&client, coord.url(), key, content_a.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content_a.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
     // Now clear the meta from the database to simulate the scenario
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
     coord.state.db.delete(&meta_key)?;
 
@@ -82,16 +83,17 @@ async fn test_rebuild_preserves_tombstones() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
 
     // Put and then delete a blob to create tombstone
-    let key = "test-key-tombstone";
+    let raw_key = "test-key-tombstone";
     let content = b"test content";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+    let (status, _, _) = put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
     // Verify meta is tombstoned
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some());
@@ -144,12 +146,13 @@ async fn test_rebuild_dry_run() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
 
     // Put a blob and then clear meta
-    let key = "test-key-dry-run";
+    let raw_key = "test-key-dry-run";
     let content = b"test content";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+    let (status, _, _) = put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
     coord.state.db.delete(&meta_key)?;
 

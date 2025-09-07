@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::file_utils::{meta_key_for, sanitize_key};
+use ::common::key_utils::{meta_key_for, Key};
 use common::*;
 
 use coord::command::repair::{RepairArgs, repair};
@@ -25,13 +25,14 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob through coordinator - it should go to both volumes
-    let key = "test-key-repair";
+    let raw_key = "test-key-repair";
     let content = b"test content for repair";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Simulate under-replication by modifying the meta to only list vol1
@@ -106,13 +107,14 @@ async fn test_repair_uses_valid_source_only() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob to get it on both volumes
-    let key = "test-key-valid-source";
+    let raw_key = "test-key-valid-source";
     let content = b"test content for valid source";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Simulate corruption by modifying meta to only list vol1, but vol2 has valid copy
@@ -167,24 +169,34 @@ async fn test_repair_uses_valid_source_only() -> anyhow::Result<()> {
 async fn test_repair_skips_tombstoned_metas() -> anyhow::Result<()> {
     // Setup: meta for A is Tombstoned, but files exist on some volumes
     let coord = TestCoordinator::new_with_replicas(2).await?;
+
     let mut vol1 = TestVolume::new(coord.url().to_string(), "vol-1".to_string()).await?;
+    let mut vol2 = TestVolume::new(coord.url().to_string(), "vol-2".to_string()).await?;
+    let mut vol3 = TestVolume::new(coord.url().to_string(), "vol-3".to_string()).await?;
 
     vol1.join_coordinator().await?;
     vol1.start_heartbeat(500)?;
 
+    vol2.join_coordinator().await?;
+    vol2.start_heartbeat(500)?;
+
+    vol3.join_coordinator().await?;
+    vol3.start_heartbeat(500)?;
+
     let client = Client::new();
-    wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
+    wait_for_volumes_alive(&client, coord.url(), 3, 3000).await?;
 
     // Put and then delete a blob to create tombstone
-    let key = "test-key-tombstone-repair";
+    let raw_key = "test-key-tombstone-repair";
     let content = b"test content tombstone";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+    let (status, _, _) = put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Verify meta is tombstoned
@@ -213,7 +225,7 @@ async fn test_repair_skips_tombstoned_metas() -> anyhow::Result<()> {
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: Some(vec![vol1.url().to_string()]),
+        volumes: None,  // Use registry
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
@@ -250,13 +262,14 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob through coordinator
-    let key = "test-key-precheck";
+    let raw_key = "test-key-precheck";
     let content = b"test content precheck";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Simulate scenario where destination has file but meta doesn't list it
@@ -285,7 +298,7 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: Some(vec![vol1.url().to_string(), vol2.url().to_string()]),
+        volumes: None,  // Use registry
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
@@ -327,13 +340,14 @@ async fn test_repair_dry_run() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob and simulate under-replication
-    let key = "test-key-dry-run-repair";
+    let raw_key = "test-key-dry-run-repair";
     let content = b"test content dry run";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Simulate under-replication
@@ -405,13 +419,14 @@ async fn test_repair_resumability_journal() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob
-    let key = "test-key-journal";
+    let raw_key = "test-key-journal";
     let content = b"test content journal";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Simulate under-replication

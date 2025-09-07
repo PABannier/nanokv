@@ -20,8 +20,9 @@ use crate::core::{
     placement::{choose_top_n_alive, rank_nodes},
 };
 use common::constants::META_KEY_PREFIX;
+use common::key_utils::get_key_enc_from_meta_key;
 
-const J_REPAIR_PREFIX: &str = "repair:"; // repair:{key}:{dst} -> Planned|InFlight|Committed|Failed(msg)
+const J_REPAIR_PREFIX: &str = "repair"; // repair:{key}:{dst} -> Planned|InFlight|Committed|Failed(msg)
 
 #[derive(Parser, Debug, Clone)]
 pub struct RepairArgs {
@@ -81,7 +82,7 @@ enum MoveState {
 }
 
 fn jkey(key_enc: &str, dst: &str) -> String {
-    format!("{J_REPAIR_PREFIX}{key_enc}:{dst}")
+    format!("{J_REPAIR_PREFIX}:{key_enc}:{dst}")
 }
 
 pub async fn repair(args: RepairArgs) -> Result<()> {
@@ -141,10 +142,7 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
             continue;
         }
 
-        let key_enc = std::str::from_utf8(&k)?
-            .strip_prefix(META_KEY_PREFIX)
-            .unwrap()
-            .to_string();
+        let key_enc = get_key_enc_from_meta_key(std::str::from_utf8(&k)?);
         let meta: Meta = serde_json::from_slice(&v)?;
         match meta.state {
             TxState::Tombstoned => {
@@ -339,10 +337,7 @@ async fn refresh_metas(
         if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
             continue;
         }
-        let key_enc = std::str::from_utf8(&k)?
-            .strip_prefix(META_KEY_PREFIX)
-            .unwrap()
-            .to_string();
+        let key_enc = get_key_enc_from_meta_key(std::str::from_utf8(&k)?);
 
         let mut meta: Meta = serde_json::from_slice(&v)?;
         if meta.state != TxState::Committed {

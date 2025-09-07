@@ -14,6 +14,7 @@ use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use common::constants::META_KEY_PREFIX;
+use common::key_utils::get_key_enc_from_meta_key;
 use common::schemas::{ListResponse, SweepTmpResponse};
 use common::time_utils::utc_now_ms;
 
@@ -254,10 +255,7 @@ async fn clean_tombstones(
         if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
             continue;
         }
-        let key_enc = std::str::from_utf8(&k)?
-            .strip_prefix(META_KEY_PREFIX)
-            .unwrap()
-            .to_string();
+        let key_enc = get_key_enc_from_meta_key(std::str::from_utf8(&k)?);
         let meta: Meta = serde_json::from_slice(&v)?;
         if meta.state != TxState::Tombstoned {
             continue;
@@ -299,7 +297,7 @@ async fn clean_tombstones(
 
         if args.purge_tombstone_meta && (args.force_purge || sent == targets.len()) && !args.dry_run
         {
-            db.delete(&format!("{}{}", META_KEY_PREFIX, key_enc))?;
+            db.delete(&format!("{}:{}", META_KEY_PREFIX, key_enc))?;
             report.tombstone_metas_purged += 1;
         }
     }
@@ -373,10 +371,7 @@ async fn clean_extraneous_and_orphans(
         if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
             continue;
         }
-        let key_enc = std::str::from_utf8(&k)?
-            .strip_prefix(META_KEY_PREFIX)
-            .unwrap()
-            .to_string();
+        let key_enc = get_key_enc_from_meta_key(std::str::from_utf8(&k)?);
         let meta: Meta = serde_json::from_slice(&v)?;
         if meta.state == TxState::Committed {
             expected.insert(key_enc, meta.replicas.into_iter().collect());

@@ -3,7 +3,6 @@ use axum::http::HeaderMap;
 use blake3;
 use bytes::Bytes;
 use futures_util::StreamExt;
-use percent_encoding::{self, NON_ALPHANUMERIC, percent_encode};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -13,8 +12,8 @@ use tokio::io::AsyncReadExt;
 use tokio::{fs, io::AsyncWriteExt};
 use tracing::error;
 
-use crate::api_error::ApiError;
-use crate::constants::{BLOB_DIR_NAME, GC_DIR_NAME, MAX_KEY_LEN, META_KEY_PREFIX, TMP_DIR_NAME};
+use crate::error::ApiError;
+use crate::constants::{BLOB_DIR_NAME, GC_DIR_NAME, TMP_DIR_NAME};
 
 pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {
     headers
@@ -23,20 +22,6 @@ pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {
         .ok()?
         .parse()
         .ok()
-}
-
-pub fn sanitize_key(raw: &str) -> Result<String, ApiError> {
-    if raw.is_empty() || raw.len() > MAX_KEY_LEN {
-        return Err(ApiError::Any(anyhow::anyhow!("invalid key length")));
-    }
-
-    if raw.contains("..") {
-        return Err(ApiError::Any(anyhow::anyhow!("invalid key")));
-    }
-
-    // Percent-encode to keep filenames safe
-    let enc = percent_encode(raw.as_bytes(), NON_ALPHANUMERIC).to_string();
-    Ok(enc)
 }
 
 fn shard_dirs(key: &str) -> (String, String) {
@@ -119,9 +104,4 @@ where
     let etag = hasher.finalize().to_hex().to_string();
 
     Ok((total, etag))
-}
-
-pub fn meta_key_for(user_key_enc: &str) -> String {
-    // user_key_enc is the percent-encoded file name
-    format!("{}:{}", META_KEY_PREFIX, user_key_enc)
 }

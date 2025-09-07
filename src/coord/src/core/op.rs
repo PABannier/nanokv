@@ -1,6 +1,6 @@
 use crate::core::node::NodeInfo;
 use anyhow::anyhow;
-use common::api_error::ApiError;
+use common::error::ApiError;
 
 pub mod guard {
     use futures_util::future::join_all;
@@ -51,7 +51,7 @@ pub mod guard {
 pub mod meta {
     use uuid::Uuid;
 
-    use common::api_error::ApiError;
+    use common::error::ApiError;
 
     use crate::core::meta::{KvDb, Meta};
     use crate::core::node::NodeInfo;
@@ -94,7 +94,7 @@ pub mod meta {
 
 pub mod prepare {
     use super::retry::{RetryClass, classify_reqwest, retry_timeboxed};
-    use common::api_error::ApiError;
+    use common::error::ApiError;
 
     use futures_util::future::try_join_all;
     use reqwest::Client;
@@ -180,7 +180,7 @@ pub mod write {
     use futures_util::TryStreamExt;
     use reqwest::Client;
 
-    use common::api_error::ApiError;
+    use common::error::ApiError;
     use common::schemas::PutResponse;
 
     use crate::core::node::NodeInfo;
@@ -227,7 +227,7 @@ pub mod pull {
     use futures_util::future::try_join_all;
     use reqwest::Client;
 
-    use common::api_error::ApiError;
+    use common::error::ApiError;
     use common::schemas::PutResponse;
 
     use crate::core::node::NodeInfo;
@@ -328,7 +328,7 @@ pub mod pull {
 pub mod commit {
     use super::retry::RetryConfig;
     use super::retry::{RetryClass, classify_reqwest, retry_timeboxed};
-    use common::api_error::ApiError;
+    use common::error::ApiError;
 
     use futures_util::future::try_join_all;
     use reqwest::Client;

@@ -8,10 +8,10 @@ use axum::{
 use futures_util::future::try_join_all;
 use std::time::Instant;
 
-use common::api_error::ApiError;
+use common::error::ApiError;
 use common::constants::NODE_KEY_PREFIX;
 use common::file_utils::parse_content_length;
-use common::file_utils::{meta_key_for, sanitize_key};
+use common::key_utils::{meta_key_for, Key};
 use common::schemas::{HeartbeatRequest, JoinRequest};
 use common::time_utils::utc_now_ms;
 use common::url_utils::sanitize_url;
@@ -33,9 +33,9 @@ pub async fn put_object(
     body: Body,
 ) -> Result<(StatusCode, HeaderMap), ApiError> {
     // Sanity checks
-    let key_enc = sanitize_key(&raw_key)?;
-
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
     ensure_write_once(&ctx, &meta_key)?;
 
     content_length_check(&headers, ctx.max_size)?;
@@ -49,7 +49,7 @@ pub async fn put_object(
             .values()
             .map(|n| n.info.clone())
             .collect::<Vec<_>>();
-        choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas)
+        choose_top_n_alive(&nodes, key_enc, ctx.n_replicas)
     };
 
     if replicas.len() < ctx.n_replicas {
@@ -114,7 +114,8 @@ pub async fn get_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     let meta = match ctx.db.get::<Meta>(&meta_key)? {
@@ -169,7 +170,8 @@ pub async fn delete_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
 ) -> Result<StatusCode, ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     let existing = match ctx.db.get::<Meta>(&meta_key)? {
@@ -215,7 +217,8 @@ pub async fn head_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
 ) -> Result<(StatusCode, HeaderMap), ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     let meta = match ctx.db.get::<Meta>(&meta_key)? {

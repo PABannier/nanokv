@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use blake3::Hasher;
-use common::api_error::ApiError;
+use common::error::ApiError;
 use rand::seq::IndexedRandom;
 
 use crate::core::meta::Meta;

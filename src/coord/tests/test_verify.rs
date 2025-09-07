@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::file_utils::{meta_key_for, sanitize_key};
+use ::common::key_utils::{meta_key_for, Key};
 use common::*;
 
 use coord::command::verify::{VerifyArgs, verify};
@@ -24,13 +24,14 @@ async fn test_verify_under_replication() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob through coordinator
-    let key = "test-key-under-repl";
+    let raw_key = "test-key-under-repl";
     let content = b"test content under replication";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Verify both volumes have the file initially
@@ -94,13 +95,14 @@ async fn test_verify_corrupted_size_mismatch() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob
-    let key = "test-key-size-mismatch";
+    let raw_key = "test-key-size-mismatch";
     let content = b"test content size mismatch";
     let (status, _etag, size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Corrupt the meta by changing the size
@@ -158,13 +160,14 @@ async fn test_verify_deep_etag_mismatch() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob
-    let key = "test-key-etag-mismatch";
+    let raw_key = "test-key-etag-mismatch";
     let content = b"test content etag mismatch";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
 
     // Corrupt the meta by changing the etag
@@ -242,7 +245,8 @@ async fn test_verify_unindexed_and_should_gc() -> anyhow::Result<()> {
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
     // Verify tombstone exists
-    let key_enc_tombstone = sanitize_key(key_tombstone)?;
+    let key = Key::from_percent_encoded(key_tombstone).unwrap();
+    let key_enc_tombstone = key.enc();
     let meta_key_tombstone = meta_key_for(&key_enc_tombstone);
     let meta_tombstone: Option<Meta> = coord.state.db.get(&meta_key_tombstone)?;
     assert!(meta_tombstone.is_some());
