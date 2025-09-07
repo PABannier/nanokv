@@ -111,7 +111,7 @@ pub async fn write_handler(
     Ok((StatusCode::CREATED, axum::Json(resp)))
 }
 
-// GET /:upload_id (head only)
+// GET /read/:upload_id (head only)
 pub async fn read_handler(
     Path(upload_id): Path<String>,
     State(ctx): State<VolumeState>,
@@ -265,7 +265,7 @@ pub async fn abort_handler(
     Ok(StatusCode::OK)
 }
 
-// GET /:key
+// GET /blobs/:key
 pub async fn get_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>,
