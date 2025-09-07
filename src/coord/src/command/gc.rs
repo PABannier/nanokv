@@ -155,6 +155,7 @@ pub async fn gc(args: GcArgs) -> Result<()> {
 }
 
 
+#[allow(clippy::too_many_arguments)]
 async fn sweep_tmp_on_all(
     http: &Client,
     volumes: &HashMap<String, Url>,
@@ -176,7 +177,6 @@ async fn sweep_tmp_on_all(
             let global = Arc::clone(global);
             let per = Arc::clone(per_node);
             let dry = args.dry_run;
-            let timeout = timeout;
 
             async move {
                 let _g = global.acquire_owned().await?;
@@ -200,6 +200,7 @@ async fn sweep_tmp_on_all(
 }
 
 
+#[allow(clippy::too_many_arguments)]
 async fn clean_tombstones(
     http: &Client,
     db: &KvDb,

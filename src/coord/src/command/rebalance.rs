@@ -196,21 +196,10 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
 }
 
 // Execution report
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct ExecReport {
-    pub total: usize,
     pub done: usize,
     pub failed: usize,
-}
-
-impl ExecReport {
-    pub fn new(total: usize) -> Self {
-        Self {
-            total,
-            done: 0,
-            failed: 0,
-        }
-    }
 }
 
 async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) -> Result<ExecReport> {
@@ -226,7 +215,7 @@ async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) 
     );
     let global_sem = Arc::new(Semaphore::new(cfg.concurrency));
 
-    let mut report = ExecReport::new(plan.moves.len());
+    let mut report = ExecReport::default();
 
     let mut tasks = FuturesUnordered::new();
 
