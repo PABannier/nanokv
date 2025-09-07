@@ -1,10 +1,10 @@
 use reqwest::Client;
 
 mod common;
-use common::*;
 use ::common::file_utils;
-use coord::core::node::NodeStatus;
+use common::*;
 use coord::core::meta::{Meta, TxState};
+use coord::core::node::NodeStatus;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
@@ -21,7 +21,8 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
         let nodes = list_nodes(&client, coord.url()).await?;
         println!("Current nodes: {:?}", nodes);
         Ok(nodes.len() == 1 && nodes[0].status == NodeStatus::Alive)
-    }).await?;
+    })
+    .await?;
 
     println!("Volume is alive, proceeding with PUT test");
 
@@ -30,7 +31,8 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
     let expected_etag = blake3_hex(&payload);
     let expected_len = payload.len() as u64;
 
-    let (status, etag, len) = put_via_coordinator(&client, coord.url(), "test-key", payload.clone()).await?;
+    let (status, etag, len) =
+        put_via_coordinator(&client, coord.url(), "test-key", payload.clone()).await?;
 
     // Assert coordinator response
     assert_eq!(status, reqwest::StatusCode::CREATED);
@@ -50,7 +52,11 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
 
     // Assert volume has the file at correct location with same size
     let blob_file_path = file_utils::blob_path(&volume.state.data_root, "test%2Dkey");
-    assert!(blob_file_path.exists(), "Blob file not found at {:?}", blob_file_path);
+    assert!(
+        blob_file_path.exists(),
+        "Blob file not found at {:?}",
+        blob_file_path
+    );
 
     let file_size = std::fs::metadata(&blob_file_path)?.len();
     assert_eq!(file_size, expected_len);
@@ -112,7 +118,8 @@ async fn test_large_object_streaming() -> anyhow::Result<()> {
     wait_until(3000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;
         Ok(nodes.len() == 1 && nodes[0].status == NodeStatus::Alive)
-    }).await?;
+    })
+    .await?;
 
     // Create a 100-200 MiB payload (we'll use 150 MiB)
     let size = 150 * 1024 * 1024; // 150 MiB
@@ -121,7 +128,8 @@ async fn test_large_object_streaming() -> anyhow::Result<()> {
     let expected_len = payload.len() as u64;
 
     // PUT via coordinator
-    let (status, etag, len) = put_via_coordinator(&client, coord.url(), "large-key", payload.clone()).await?;
+    let (status, etag, len) =
+        put_via_coordinator(&client, coord.url(), "large-key", payload.clone()).await?;
 
     // Assert success and metadata correctness
     assert_eq!(status, reqwest::StatusCode::CREATED);

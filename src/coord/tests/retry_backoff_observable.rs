@@ -23,14 +23,15 @@ async fn test_retry_backoff_observable() -> anyhow::Result<()> {
 
     // Inject repeated transient prepare failures on F1 (e.g., 3 times) then success
     let follower_node = &expected_replicas[1];
-    let follower_volume = volumes.iter()
+    let follower_volume = volumes
+        .iter()
         .find(|v| v.state.node_id == *follower_node)
         .expect("Should find follower volume");
 
     // Inject multiple failures to observe retry behavior
     let fail_url = format!("{}/admin/fail/prepare?count=3", follower_volume.url());
     let fail_resp = client.post(&fail_url).send().await;
-    
+
     if let Ok(resp) = fail_resp {
         if resp.status().is_success() {
             println!("Injected 3 prepare failures on follower: {}", follower_node);
@@ -52,14 +53,24 @@ async fn test_retry_backoff_observable() -> anyhow::Result<()> {
     let total_elapsed = start_time.elapsed();
 
     // Assert: increasing intervals between attempts (within jitter), and total time ≤ configured budget
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should eventually succeed after retries");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should eventually succeed after retries"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     println!("PUT completed in {:?}", total_elapsed);
 
     // Verify timing constraints
-    assert!(total_elapsed.as_millis() > 500, "Should take some time due to multiple retries and backoff");
-    assert!(total_elapsed.as_secs() < 10, "Should complete within reasonable time budget");
+    assert!(
+        total_elapsed.as_millis() > 500,
+        "Should take some time due to multiple retries and backoff"
+    );
+    assert!(
+        total_elapsed.as_secs() < 10,
+        "Should complete within reasonable time budget"
+    );
 
     // The backoff behavior is observable in the total time taken
     // With exponential backoff: first retry ~100ms, second ~200ms, third ~400ms, etc.
@@ -72,7 +83,11 @@ async fn test_retry_backoff_observable() -> anyhow::Result<()> {
 
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     println!("Retry backoff observable test successful");
 
@@ -109,7 +124,11 @@ async fn test_retry_backoff_different_phases() -> anyhow::Result<()> {
     let (status1, _, _) = put_via_coordinator(&client, coord.url(), key1, payload1).await?;
     let elapsed1 = start1.elapsed();
 
-    assert_eq!(status1, reqwest::StatusCode::CREATED, "Prepare backoff PUT should succeed");
+    assert_eq!(
+        status1,
+        reqwest::StatusCode::CREATED,
+        "Prepare backoff PUT should succeed"
+    );
     println!("Prepare phase with backoff completed in {:?}", elapsed1);
 
     // Test 2: Pull phase backoff
@@ -127,7 +146,11 @@ async fn test_retry_backoff_different_phases() -> anyhow::Result<()> {
     let (status2, _, _) = put_via_coordinator(&client, coord.url(), key2, payload2).await?;
     let elapsed2 = start2.elapsed();
 
-    assert_eq!(status2, reqwest::StatusCode::CREATED, "Pull backoff PUT should succeed");
+    assert_eq!(
+        status2,
+        reqwest::StatusCode::CREATED,
+        "Pull backoff PUT should succeed"
+    );
     println!("Pull phase with backoff completed in {:?}", elapsed2);
 
     // Test 3: Commit phase backoff
@@ -145,7 +168,11 @@ async fn test_retry_backoff_different_phases() -> anyhow::Result<()> {
     let (status3, _, _) = put_via_coordinator(&client, coord.url(), key3, payload3).await?;
     let elapsed3 = start3.elapsed();
 
-    assert_eq!(status3, reqwest::StatusCode::CREATED, "Commit backoff PUT should succeed");
+    assert_eq!(
+        status3,
+        reqwest::StatusCode::CREATED,
+        "Commit backoff PUT should succeed"
+    );
     println!("Commit phase with backoff completed in {:?}", elapsed3);
 
     // Analyze backoff behavior across phases
@@ -155,14 +182,32 @@ async fn test_retry_backoff_different_phases() -> anyhow::Result<()> {
     println!("  Commit phase: {:?}", elapsed3);
 
     // Each should show evidence of retry delays
-    assert!(elapsed1.as_millis() > 200, "Prepare backoff should show retry delay");
-    assert!(elapsed2.as_millis() > 200, "Pull backoff should show retry delay");
-    assert!(elapsed3.as_millis() > 200, "Commit backoff should show retry delay");
+    assert!(
+        elapsed1.as_millis() > 200,
+        "Prepare backoff should show retry delay"
+    );
+    assert!(
+        elapsed2.as_millis() > 200,
+        "Pull backoff should show retry delay"
+    );
+    assert!(
+        elapsed3.as_millis() > 200,
+        "Commit backoff should show retry delay"
+    );
 
     // But all should complete within reasonable bounds
-    assert!(elapsed1.as_secs() < 8, "Prepare backoff should complete within budget");
-    assert!(elapsed2.as_secs() < 15, "Pull backoff should complete within budget (longer for large payload)");
-    assert!(elapsed3.as_secs() < 8, "Commit backoff should complete within budget");
+    assert!(
+        elapsed1.as_secs() < 8,
+        "Prepare backoff should complete within budget"
+    );
+    assert!(
+        elapsed2.as_secs() < 15,
+        "Pull backoff should complete within budget (longer for large payload)"
+    );
+    assert!(
+        elapsed3.as_secs() < 8,
+        "Commit backoff should complete within budget"
+    );
 
     println!("Different phases retry backoff test successful");
 
@@ -205,22 +250,43 @@ async fn test_retry_backoff_budget_exhaustion() -> anyhow::Result<()> {
     let total_elapsed = start_time.elapsed();
 
     // Should fail after exhausting retry budget
-    assert!(status.is_server_error(), "PUT should fail after exhausting retry budget, got: {}", status);
-    println!("PUT correctly failed after {:?} (budget exhausted)", total_elapsed);
+    assert!(
+        status.is_server_error(),
+        "PUT should fail after exhausting retry budget, got: {}",
+        status
+    );
+    println!(
+        "PUT correctly failed after {:?} (budget exhausted)",
+        total_elapsed
+    );
 
     // Should have taken a reasonable amount of time showing multiple retry attempts
-    assert!(total_elapsed.as_secs() >= 2, "Should take time showing multiple retry attempts");
-    assert!(total_elapsed.as_secs() < 15, "Should not exceed reasonable maximum budget");
+    assert!(
+        total_elapsed.as_secs() >= 2,
+        "Should take time showing multiple retry attempts"
+    );
+    assert!(
+        total_elapsed.as_secs() < 15,
+        "Should not exceed reasonable maximum budget"
+    );
 
     // Verify no data was committed
     let meta = meta_of(&coord.state.db, key)?;
     if let Some(meta) = meta {
-        assert_ne!(meta.state, TxState::Committed, "Meta should not be committed after budget exhaustion");
+        assert_ne!(
+            meta.state,
+            TxState::Committed,
+            "Meta should not be committed after budget exhaustion"
+        );
     }
 
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 0, "No volume should have file after budget exhaustion");
+    assert_eq!(
+        volumes_with_file.len(),
+        0,
+        "No volume should have file after budget exhaustion"
+    );
 
     println!("Retry budget exhaustion test successful");
 
@@ -257,16 +323,21 @@ async fn test_jitter_in_backoff() -> anyhow::Result<()> {
         }
 
         let payload = generate_random_bytes(512);
-        
+
         let start_time = Instant::now();
         let (status, _, _) = put_via_coordinator(&client, coord.url(), &key, payload).await?;
         let elapsed = start_time.elapsed();
 
-        assert_eq!(status, reqwest::StatusCode::CREATED, "PUT {} should succeed", i);
+        assert_eq!(
+            status,
+            reqwest::StatusCode::CREATED,
+            "PUT {} should succeed",
+            i
+        );
         timing_samples.push(elapsed);
 
         println!("PUT {} completed in {:?}", i, elapsed);
-        
+
         // Small delay between tests
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -277,8 +348,12 @@ async fn test_jitter_in_backoff() -> anyhow::Result<()> {
     let mut total_time = Duration::ZERO;
 
     for &sample in &timing_samples {
-        if sample < min_time { min_time = sample; }
-        if sample > max_time { max_time = sample; }
+        if sample < min_time {
+            min_time = sample;
+        }
+        if sample > max_time {
+            max_time = sample;
+        }
         total_time += sample;
     }
 
@@ -293,10 +368,18 @@ async fn test_jitter_in_backoff() -> anyhow::Result<()> {
 
     // With jitter, we should see some variance in timing
     // Even with the same failure pattern, jitter should cause different total times
-    assert!(variance.as_millis() > 50, "Should see timing variance due to jitter, got: {:?}", variance);
-    
+    assert!(
+        variance.as_millis() > 50,
+        "Should see timing variance due to jitter, got: {:?}",
+        variance
+    );
+
     // But variance shouldn't be too extreme
-    assert!(variance.as_millis() < 2000, "Variance should be reasonable, got: {:?}", variance);
+    assert!(
+        variance.as_millis() < 2000,
+        "Variance should be reasonable, got: {:?}",
+        variance
+    );
 
     println!("Jitter in backoff test successful - observed timing variance");
 
@@ -322,7 +405,11 @@ async fn test_non_retryable_errors() -> anyhow::Result<()> {
 
     // First, establish the key
     let (status1, _, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
-    assert_eq!(status1, reqwest::StatusCode::CREATED, "Initial PUT should succeed");
+    assert_eq!(
+        status1,
+        reqwest::StatusCode::CREATED,
+        "Initial PUT should succeed"
+    );
 
     println!("Key established, testing non-retryable error (write-once violation)");
 
@@ -332,11 +419,19 @@ async fn test_non_retryable_errors() -> anyhow::Result<()> {
     let elapsed = start_time.elapsed();
 
     // Should fail quickly with 409 (no retries for non-retryable errors)
-    assert_eq!(status2, reqwest::StatusCode::CONFLICT, "Second PUT should return 409");
+    assert_eq!(
+        status2,
+        reqwest::StatusCode::CONFLICT,
+        "Second PUT should return 409"
+    );
     println!("Non-retryable error returned in {:?}", elapsed);
 
     // Should be fast (no retry backoff for non-retryable errors)
-    assert!(elapsed.as_millis() < 500, "Non-retryable error should fail quickly without backoff, took: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 500,
+        "Non-retryable error should fail quickly without backoff, took: {:?}",
+        elapsed
+    );
 
     println!("Non-retryable error test successful - no backoff applied");
 

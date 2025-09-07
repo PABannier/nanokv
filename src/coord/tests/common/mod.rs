@@ -6,8 +6,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use axum::routing::{delete, get, post, put};
 use axum::Router;
+use axum::routing::{delete, get, post, put};
 use axum_server::Server;
 use reqwest::Client;
 use tempfile::TempDir;
@@ -21,7 +21,10 @@ use coord::core::health::node_status_sweeper;
 use coord::core::meta::KvDb;
 use coord::core::node::{NodeInfo, NodeStatus};
 use coord::core::placement::rank_nodes;
-use coord::core::routes::{delete_object, get_object, put_object, head_object, list_nodes as coord_list_nodes, join_node, heartbeat};
+use coord::core::routes::{
+    delete_object, get_object, head_object, heartbeat, join_node, list_nodes as coord_list_nodes,
+    put_object,
+};
 use coord::core::state::CoordinatorState;
 use volume::health::heartbeat_loop;
 use volume::routes;
@@ -64,7 +67,12 @@ impl TestCoordinator {
         Self::with_config_and_replicas(alive_ms, down_ms, sweep_ms, 1).await
     }
 
-    pub async fn with_config_and_replicas(alive_ms: u64, down_ms: u64, sweep_ms: u64, n_replicas: usize) -> Result<Self> {
+    pub async fn with_config_and_replicas(
+        alive_ms: u64,
+        down_ms: u64,
+        sweep_ms: u64,
+        n_replicas: usize,
+    ) -> Result<Self> {
         let data_dir = TempDir::new()?;
         let index_dir = data_dir.path().join("index");
 
@@ -72,9 +80,7 @@ impl TestCoordinator {
         let db = KvDb::open(&index_dir)?;
 
         let state = CoordinatorState {
-            http_client: Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()?,
+            http_client: Client::builder().timeout(Duration::from_secs(10)).build()?,
             inflight: Arc::new(tokio::sync::Semaphore::new(4)),
             nodes: Arc::new(RwLock::new(HashMap::new())),
             db,
@@ -94,12 +100,21 @@ impl TestCoordinator {
         ));
 
         let app = Router::new()
-            .route("/{key}", put(put_object).get(get_object).delete(delete_object).head(head_object))
+            .route(
+                "/{key}",
+                put(put_object)
+                    .get(get_object)
+                    .delete(delete_object)
+                    .head(head_object),
+            )
             .route("/admin/nodes", get(coord_list_nodes))
             .route("/admin/join", post(join_node))
             .route("/admin/heartbeat", post(heartbeat))
             // Debug endpoint (test-only)
-            .route("/debug/placement/{key}", get(coord::core::debug::debug_placement))
+            .route(
+                "/debug/placement/{key}",
+                get(coord::core::debug::debug_placement),
+            )
             .with_state(state.clone());
 
         let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -108,8 +123,7 @@ impl TestCoordinator {
 
         let (server_shutdown_tx, mut server_shutdown_rx) = watch::channel(false);
         let server_handle = tokio::spawn(async move {
-            let server = Server::from_tcp(listener.into_std()?)
-                .serve(app.into_make_service());
+            let server = Server::from_tcp(listener.into_std()?).serve(app.into_make_service());
 
             tokio::select! {
                 res = server => res.map_err(anyhow::Error::from),
@@ -164,9 +178,7 @@ impl TestVolume {
         let url = format!("http://{}", addr);
 
         let state = VolumeState {
-            http_client: Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()?,
+            http_client: Client::builder().timeout(Duration::from_secs(10)).build()?,
             data_root: Arc::new(data_dir.path().to_path_buf()),
             coordinator_url,
             node_id,
@@ -189,22 +201,39 @@ impl TestVolume {
             .route("/internal/abort", post(routes::abort_handler))
             .route("/internal/delete/{key}", delete(routes::delete_handler))
             // Fault injection endpoints (test-only)
-            .route("/admin/fail/prepare", post(volume::fault_injection::fail_prepare))
+            .route(
+                "/admin/fail/prepare",
+                post(volume::fault_injection::fail_prepare),
+            )
             .route("/admin/fail/pull", post(volume::fault_injection::fail_pull))
-            .route("/admin/fail/commit", post(volume::fault_injection::fail_commit))
-            .route("/admin/fail/read_tmp", post(volume::fault_injection::fail_read_tmp))
-            .route("/admin/fail/etag_mismatch", post(volume::fault_injection::fail_etag_mismatch))
-            .route("/admin/inject/latency", post(volume::fault_injection::inject_latency))
+            .route(
+                "/admin/fail/commit",
+                post(volume::fault_injection::fail_commit),
+            )
+            .route(
+                "/admin/fail/read_tmp",
+                post(volume::fault_injection::fail_read_tmp),
+            )
+            .route(
+                "/admin/fail/etag_mismatch",
+                post(volume::fault_injection::fail_etag_mismatch),
+            )
+            .route(
+                "/admin/inject/latency",
+                post(volume::fault_injection::inject_latency),
+            )
             .route("/admin/pause", post(volume::fault_injection::pause_server))
-            .route("/admin/resume", post(volume::fault_injection::resume_server))
+            .route(
+                "/admin/resume",
+                post(volume::fault_injection::resume_server),
+            )
             .route("/admin/kill", post(volume::fault_injection::kill_server))
             .route("/admin/reset", post(volume::fault_injection::reset_faults))
             .with_state(state.clone());
 
         let (shutdown_tx, _shutdown_rx) = watch::channel(false);
         let server_handle = tokio::spawn(async move {
-            let server = Server::from_tcp(listener.into_std()?)
-                .serve(app.into_make_service());
+            let server = Server::from_tcp(listener.into_std()?).serve(app.into_make_service());
             server.await.map_err(anyhow::Error::from)
         });
 
@@ -237,7 +266,13 @@ impl TestVolume {
         };
 
         let url = format!("{}/admin/join", self.state.coordinator_url);
-        let resp = self.state.http_client.post(url).json(&payload).send().await?;
+        let resp = self
+            .state
+            .http_client
+            .post(url)
+            .json(&payload)
+            .send()
+            .await?;
 
         if !resp.status().is_success() {
             anyhow::bail!("join failed: {}", resp.status());
@@ -291,12 +326,16 @@ pub async fn put_via_coordinator(
 
     // If we get an error, print the response body for debugging
     if !status.is_success() {
-        let error_body = resp.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+        let error_body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error body".to_string());
         eprintln!("PUT request failed with status {}: {}", status, error_body);
         return Ok((status, String::new(), 0));
     }
 
-    let etag = resp.headers()
+    let etag = resp
+        .headers()
         .get("etag")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
@@ -333,13 +372,15 @@ pub async fn get_redirect_location(
         .build()?;
 
     let url = format!("{}/{}", coord_url, key);
-    let resp = no_redirect_client.get(url)
+    let resp = no_redirect_client
+        .get(url)
         .header("User-Agent", "test")
         .send()
         .await?;
 
     let status = resp.status();
-    let location = resp.headers()
+    let location = resp
+        .headers()
         .get("location")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
@@ -357,10 +398,7 @@ pub async fn delete_via_coordinator(
     Ok(resp.status())
 }
 
-pub async fn list_nodes(
-    client: &Client,
-    coord_url: &str,
-) -> Result<Vec<NodeInfo>> {
+pub async fn list_nodes(client: &Client, coord_url: &str) -> Result<Vec<NodeInfo>> {
     let url = format!("{}/admin/nodes", coord_url);
     let resp = client.get(url).send().await?;
 
@@ -408,7 +446,8 @@ pub fn test_placement(key: &str, nodes: &[NodeInfo]) -> Option<String> {
         return None;
     }
 
-    let alive_nodes: Vec<NodeInfo> = nodes.iter()
+    let alive_nodes: Vec<NodeInfo> = nodes
+        .iter()
         .filter(|n| n.status == NodeStatus::Alive)
         .cloned()
         .collect();
@@ -429,7 +468,8 @@ pub fn test_placement_n(key: &str, nodes: &[NodeInfo], n: usize) -> Vec<String> 
         return vec![];
     }
 
-    let alive_nodes: Vec<NodeInfo> = nodes.iter()
+    let alive_nodes: Vec<NodeInfo> = nodes
+        .iter()
         .filter(|n| n.status == NodeStatus::Alive)
         .cloned()
         .collect();
@@ -439,7 +479,11 @@ pub fn test_placement_n(key: &str, nodes: &[NodeInfo], n: usize) -> Vec<String> 
     }
 
     let ranked = rank_nodes(key, &alive_nodes);
-    ranked.into_iter().take(n).map(|n| n.node_id.clone()).collect()
+    ranked
+        .into_iter()
+        .take(n)
+        .map(|n| n.node_id.clone())
+        .collect()
 }
 
 /// Create a client that follows redirects for end-to-end GET tests
@@ -459,11 +503,7 @@ pub fn create_no_redirect_client() -> Result<Client> {
 }
 
 /// Follow a redirect and get the final response body
-pub async fn follow_redirect_get(
-    client: &Client,
-    coord_url: &str,
-    key: &str,
-) -> Result<Vec<u8>> {
+pub async fn follow_redirect_get(client: &Client, coord_url: &str, key: &str) -> Result<Vec<u8>> {
     let url = format!("{}/{}", coord_url, key);
     let resp = client.get(url).send().await?;
 
@@ -483,7 +523,7 @@ pub fn meta_of(db: &KvDb, key: &str) -> Result<Option<Meta>> {
 
 /// Check which volumes have the blob file for a key
 pub fn which_volume_has_file(volumes: &[&TestVolume], key: &str) -> Result<Vec<String>> {
-    use common::file_utils::{sanitize_key, blob_path};
+    use common::file_utils::{blob_path, sanitize_key};
 
     let key_enc = sanitize_key(key)?;
     let mut found_nodes = Vec::new();
@@ -512,7 +552,10 @@ pub async fn create_volumes(coord_url: &str, count: usize) -> Result<Vec<TestVol
 }
 
 /// Join all volumes to coordinator and start heartbeats
-pub async fn join_and_heartbeat_volumes(volumes: &mut [TestVolume], heartbeat_interval_ms: u64) -> Result<()> {
+pub async fn join_and_heartbeat_volumes(
+    volumes: &mut [TestVolume],
+    heartbeat_interval_ms: u64,
+) -> Result<()> {
     for vol in volumes.iter_mut() {
         vol.join_coordinator().await?;
         vol.start_heartbeat(heartbeat_interval_ms)?;
@@ -521,11 +564,17 @@ pub async fn join_and_heartbeat_volumes(volumes: &mut [TestVolume], heartbeat_in
 }
 
 /// Wait for all volumes to be alive
-pub async fn wait_for_volumes_alive(client: &Client, coord_url: &str, expected_count: usize, timeout_ms: u64) -> Result<()> {
+pub async fn wait_for_volumes_alive(
+    client: &Client,
+    coord_url: &str,
+    expected_count: usize,
+    timeout_ms: u64,
+) -> Result<()> {
     wait_until(timeout_ms, || async {
         let nodes = list_nodes(client, coord_url).await?;
         Ok(nodes.len() == expected_count && nodes.iter().all(|n| n.status == NodeStatus::Alive))
-    }).await
+    })
+    .await
 }
 
 /// Shutdown multiple volumes

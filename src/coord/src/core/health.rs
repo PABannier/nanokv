@@ -1,19 +1,19 @@
-use std::time::Duration;
-use std::path::Path;
 use std::collections::HashSet;
-use tracing::{info, error};
+use std::path::Path;
+use std::time::Duration;
 use tokio::sync::watch;
+use tracing::{error, info};
 
 use std::time::Instant;
 
 use crate::core::node::NodeStatus;
 use crate::core::state::CoordinatorState;
 
+use common::constants::{META_KEY_PREFIX, NODE_KEY_PREFIX, TMP_DIR_NAME};
 use common::file_utils::tmp_path;
-use common::constants::{META_KEY_PREFIX, TMP_DIR_NAME, NODE_KEY_PREFIX};
 use common::time_utils::utc_now_ms;
 
-use crate::core::meta::{Meta, TxState, KvDb};
+use crate::core::meta::{KvDb, Meta, TxState};
 
 pub async fn startup_cleanup(data_root: &Path, db: &KvDb, grace: Duration) -> anyhow::Result<()> {
     let now_ms = utc_now_ms();
@@ -25,7 +25,9 @@ pub async fn startup_cleanup(data_root: &Path, db: &KvDb, grace: Duration) -> an
     for kv in db.iter() {
         let (k, v) = kv?;
 
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
         let meta: Meta = serde_json::from_slice(&v)?;
 
         // only consider pending older than grace period
@@ -52,12 +54,15 @@ pub async fn sweep_tmp_orphans(data_root: &Path, db: &KvDb) -> anyhow::Result<()
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
         let meta: Meta = serde_json::from_slice(&v)?;
         if matches!(meta.state, TxState::Pending)
-            && let Some(upload_id) = meta.upload_id {
-                pending_ids.insert(upload_id);
-            }
+            && let Some(upload_id) = meta.upload_id
+        {
+            pending_ids.insert(upload_id);
+        }
     }
 
     let tmp_dir = data_root.join(TMP_DIR_NAME);
@@ -66,7 +71,7 @@ pub async fn sweep_tmp_orphans(data_root: &Path, db: &KvDb) -> anyhow::Result<()
     if tmp_dir.exists() {
         let mut rd = tokio::fs::read_dir(tmp_dir).await?;
         while let Some(entry) = rd.next_entry().await? {
-            let name = entry.file_name().to_string_lossy().to_string();  // upload_id
+            let name = entry.file_name().to_string_lossy().to_string(); // upload_id
             if !pending_ids.contains(&name) {
                 let path = entry.path();
                 let _ = tokio::fs::remove_file(&path).await;
@@ -80,13 +85,15 @@ pub async fn sweep_tmp_orphans(data_root: &Path, db: &KvDb) -> anyhow::Result<()
 }
 
 fn file_exists_sync(path: &Path) -> bool {
-    std::fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+    std::fs::metadata(path)
+        .map(|m| m.is_file())
+        .unwrap_or(false)
 }
 
 pub async fn node_status_sweeper(
-    state: CoordinatorState, 
+    state: CoordinatorState,
     interval: std::time::Duration,
-    mut shutdown: watch::Receiver<bool>
+    mut shutdown: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let mut tick = tokio::time::interval(interval);
 
@@ -117,7 +124,10 @@ pub async fn node_status_sweeper(
             };
             if new_status != node.info.status {
                 node.info.status = new_status;
-                state.db.put(&format!("{}:{}", NODE_KEY_PREFIX, node.info.node_id), &node.info)?;
+                state.db.put(
+                    &format!("{}:{}", NODE_KEY_PREFIX, node.info.node_id),
+                    &node.info,
+                )?;
             }
         }
     }

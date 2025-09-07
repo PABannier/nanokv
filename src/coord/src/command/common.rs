@@ -2,25 +2,30 @@ use anyhow::{Result, bail};
 use reqwest::Client;
 use uuid::Uuid;
 
-use common::schemas::BlobHead;
 use common::constants::NODE_KEY_PREFIX;
-use common::url_utils::node_id_from_url;
+use common::schemas::BlobHead;
 use common::time_utils::utc_now_ms;
+use common::url_utils::node_id_from_url;
 
-use crate::core::op::{prepare::retry_prepare, pull::retry_pull, commit::retry_commit};
-use crate::core::node::{NodeInfo, NodeStatus};
 use crate::core::meta::KvDb;
-
+use crate::core::node::{NodeInfo, NodeStatus};
+use crate::core::op::{commit::retry_commit, prepare::retry_prepare, pull::retry_pull};
 
 pub fn nodes_from_db(db: &KvDb, include_suspect: bool) -> Result<Vec<NodeInfo>> {
     let mut nodes = Vec::new();
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(NODE_KEY_PREFIX.as_bytes()) { continue; }
+        if !k.starts_with(NODE_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
         let node_info: NodeInfo = serde_json::from_slice(&v)?;
         match node_info.status {
             NodeStatus::Alive => nodes.push(node_info),
-            NodeStatus::Suspect => if include_suspect { nodes.push(node_info) },
+            NodeStatus::Suspect => {
+                if include_suspect {
+                    nodes.push(node_info)
+                }
+            }
             NodeStatus::Down => (),
         }
     }
@@ -52,7 +57,13 @@ pub async fn probe_exists(http: &Client, node: &NodeInfo, key_enc: &str) -> Resu
     Ok(h.exists)
 }
 
-pub async fn probe_matches(http: &Client, node: &NodeInfo, key_enc: &str, etag: &str, size: u64) -> Result<bool> {
+pub async fn probe_matches(
+    http: &Client,
+    node: &NodeInfo,
+    key_enc: &str,
+    etag: &str,
+    size: u64,
+) -> Result<bool> {
     let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
     let r = http.get(&url).send().await?.error_for_status()?;
     let h: BlobHead = r.json().await?;

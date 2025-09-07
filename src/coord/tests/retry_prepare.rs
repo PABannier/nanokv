@@ -24,7 +24,11 @@ async fn test_prepare_multiple_retries() -> anyhow::Result<()> {
         if let Some(volume) = volumes.iter().find(|v| v.state.node_id == *replica_node) {
             let fail_url = format!("{}/admin/fail/prepare?count=2", volume.url());
             let _ = client.post(&fail_url).send().await;
-            println!("Attempted to inject 2 prepare failures on replica {}: {}", i+1, replica_node);
+            println!(
+                "Attempted to inject 2 prepare failures on replica {}: {}",
+                i + 1,
+                replica_node
+            );
         }
     }
 
@@ -38,10 +42,17 @@ async fn test_prepare_multiple_retries() -> anyhow::Result<()> {
     let elapsed = start_time.elapsed();
 
     // Should still succeed despite multiple failures
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed despite multiple prepare failures");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed despite multiple prepare failures"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
-    println!("PUT with multiple prepare retries completed in {:?}", elapsed);
+    println!(
+        "PUT with multiple prepare retries completed in {:?}",
+        elapsed
+    );
 
     // Verify final state
     let meta = meta_of(&coord.state.db, key)?.expect("Meta should exist");
@@ -49,7 +60,11 @@ async fn test_prepare_multiple_retries() -> anyhow::Result<()> {
 
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     println!("Multiple prepare retry test successful");
 
@@ -73,7 +88,7 @@ async fn test_prepare_failure_on_head_node() -> anyhow::Result<()> {
     let key = "test-head-prepare-retry";
     let nodes = list_nodes(&client, coord.url()).await?;
     let expected_replicas = test_placement_n(key, &nodes, 3);
-    
+
     // Inject failure on head node (first replica)
     let head_node = &expected_replicas[0];
     if let Some(head_volume) = volumes.iter().find(|v| v.state.node_id == *head_node) {
@@ -88,13 +103,21 @@ async fn test_prepare_failure_on_head_node() -> anyhow::Result<()> {
     let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload).await?;
 
     // Should succeed after retry
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed after head prepare retry");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed after head prepare retry"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     // Verify all replicas have the data
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     println!("Head node prepare retry test successful");
 

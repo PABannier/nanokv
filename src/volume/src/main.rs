@@ -1,48 +1,33 @@
-use axum::{routing::{put, get, delete, post}, Router};
+use axum::{
+    Router,
+    routing::{delete, get, post, put},
+};
 use axum_server::Server;
-use tokio::time::Duration;
-use clap::{Parser};
+use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::time::Duration;
 use tracing::info;
 
 use common::file_utils::init_dirs;
 use common::schemas::JoinRequest;
 
+use volume::fault_injection::{
+    FaultInjector, fail_commit, fail_etag_mismatch, fail_prepare, fail_pull, fail_read_tmp,
+    inject_latency, kill_server, pause_server, reset_faults, resume_server,
+};
+use volume::health::heartbeat_loop;
+use volume::routes::{
+    abort_handler, admin_blob_handler, admin_list_handler, admin_sweep_tmp_handler, commit_handler,
+    delete_handler, get_handler, prepare_handler, pull_handler, read_handler, write_handler,
+};
 use volume::state::VolumeState;
 use volume::store::disk_usage;
-use volume::health::heartbeat_loop;
-use volume::fault_injection::{
-    FaultInjector,
-    fail_prepare,
-    fail_pull,
-    fail_commit,
-    fail_read_tmp,
-    fail_etag_mismatch,
-    inject_latency,
-    pause_server,
-    resume_server,
-    kill_server,
-    reset_faults
-};
-use volume::routes::{
-    admin_list_handler,
-    admin_blob_handler,
-    admin_sweep_tmp_handler,
-    prepare_handler,
-    write_handler,
-    read_handler,
-    pull_handler,
-    commit_handler,
-    abort_handler,
-    get_handler,
-    delete_handler,
-};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about)]
 struct Args {
-    #[arg(long, default_value="./data")]
+    #[arg(long, default_value = "./data")]
     data: PathBuf,
     #[arg(long)]
     coordinator_url: String,
@@ -128,8 +113,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
 
     info!("listening on {}", args.public_url);
-    let server = Server::bind(args.public_url.parse()?)
-        .serve(app.into_make_service());
+    let server = Server::bind(args.public_url.parse()?).serve(app.into_make_service());
 
     // Graceful shutdown: ctrl+c
     tokio::select! {

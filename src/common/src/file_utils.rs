@@ -1,24 +1,20 @@
+use anyhow;
+use axum::http::HeaderMap;
+use blake3;
+use bytes::Bytes;
+use futures_util::StreamExt;
+use percent_encoding::{self, NON_ALPHANUMERIC, percent_encode};
 use std::{
     io,
     path::{Path, PathBuf},
 };
-use bytes::Bytes;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-use tokio::{
-    fs,
-    io::{AsyncWriteExt},
-};
-use axum::http::HeaderMap;
+use tokio::{fs, io::AsyncWriteExt};
 use tracing::error;
-use blake3;
-use anyhow;
-use percent_encoding::{self, percent_encode, NON_ALPHANUMERIC};
-use futures_util::StreamExt;
 
 use crate::api_error::ApiError;
-use crate::constants::{MAX_KEY_LEN, BLOB_DIR_NAME, TMP_DIR_NAME, GC_DIR_NAME, META_KEY_PREFIX};
-
+use crate::constants::{BLOB_DIR_NAME, GC_DIR_NAME, MAX_KEY_LEN, META_KEY_PREFIX, TMP_DIR_NAME};
 
 pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {
     headers
@@ -67,7 +63,10 @@ pub async fn init_dirs(root: &Path) -> anyhow::Result<()> {
 }
 
 pub async fn file_exists(path: &Path) -> bool {
-    fs::metadata(path).await.map(|m| m.is_file()).unwrap_or(false)
+    fs::metadata(path)
+        .await
+        .map(|m| m.is_file())
+        .unwrap_or(false)
 }
 
 pub async fn fsync_dir(dir: &Path) -> io::Result<()> {
@@ -79,10 +78,12 @@ pub async fn fsync_dir(dir: &Path) -> io::Result<()> {
 pub async fn file_hash(path: &Path) -> io::Result<String> {
     let mut f = File::open(path).await?;
     let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0u8; 1024*1024];
+    let mut buf = vec![0u8; 1024 * 1024];
     loop {
         let n = f.read(&mut buf).await?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finalize().to_hex().to_string())

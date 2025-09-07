@@ -31,7 +31,11 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
     // Verify all replicas have the data
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All 3 volumes should have the file initially");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All 3 volumes should have the file initially"
+    );
 
     println!("Data replicated to all volumes, now testing reads with node failures");
 
@@ -46,14 +50,21 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
         let nodes = list_nodes(&client, coord.url()).await?;
         let f2_node = nodes.iter().find(|n| n.node_id == f2_node_id);
         Ok(f2_node.is_none_or(|n| n.status != NodeStatus::Alive))
-    }).await?;
+    })
+    .await?;
 
     println!("F2 marked as down, testing GET operations");
 
     // GET /k repeatedly: Always succeeds with 302 to one of the remaining Alive replicas
     for i in 0..5 {
-        let (get_status, location) = get_redirect_location(&no_redirect_client, coord.url(), key).await?;
-        assert_eq!(get_status, reqwest::StatusCode::FOUND, "GET {} should return 302", i);
+        let (get_status, location) =
+            get_redirect_location(&no_redirect_client, coord.url(), key).await?;
+        assert_eq!(
+            get_status,
+            reqwest::StatusCode::FOUND,
+            "GET {} should return 302",
+            i
+        );
         assert!(location.is_some(), "GET {} should have Location header", i);
 
         let location_url = location.unwrap();
@@ -63,21 +74,41 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
         for vol in &volumes {
             if location_url.starts_with(vol.url()) {
                 found_alive_volume = true;
-                println!("GET {} redirected to alive volume: {}", i, vol.state.node_id);
+                println!(
+                    "GET {} redirected to alive volume: {}",
+                    i, vol.state.node_id
+                );
                 break;
             }
         }
-        assert!(found_alive_volume, "GET {} should redirect to alive volume, got: {}", i, location_url);
+        assert!(
+            found_alive_volume,
+            "GET {} should redirect to alive volume, got: {}",
+            i, location_url
+        );
 
         // Verify it doesn't redirect to the down volume
-        assert!(!location_url.contains(&f2_node_id), "GET {} should not redirect to down volume", i);
+        assert!(
+            !location_url.contains(&f2_node_id),
+            "GET {} should not redirect to down volume",
+            i
+        );
     }
 
     // Following redirects yields bytes matching original
     for i in 0..3 {
         let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-        assert_eq!(response_bytes.len(), payload.len(), "GET {} response should have correct length", i);
-        assert_eq!(response_bytes, payload, "GET {} response should match original data", i);
+        assert_eq!(
+            response_bytes.len(),
+            payload.len(),
+            "GET {} response should have correct length",
+            i
+        );
+        assert_eq!(
+            response_bytes, payload,
+            "GET {} response should match original data",
+            i
+        );
         println!("GET {} via redirect successful", i);
     }
 
@@ -93,22 +124,30 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
         let nodes = list_nodes(&client, coord.url()).await?;
         let f2_node = nodes.iter().find(|n| n.node_id == f2_node_id);
         Ok(f2_node.is_some_and(|n| n.status == NodeStatus::Alive))
-    }).await?;
+    })
+    .await?;
 
     println!("F2 restarted and alive, testing GET can use it again");
 
     // Test that GET can now potentially redirect to F2 again
     let mut found_f2_redirect = false;
-    for i in 0..10 { // Try multiple times since placement is deterministic but we want to verify F2 is available
-        let (get_status, location) = get_redirect_location(&no_redirect_client, coord.url(), key).await?;
-        assert_eq!(get_status, reqwest::StatusCode::FOUND, "GET should still work after F2 restart");
+    for i in 0..10 {
+        // Try multiple times since placement is deterministic but we want to verify F2 is available
+        let (get_status, location) =
+            get_redirect_location(&no_redirect_client, coord.url(), key).await?;
+        assert_eq!(
+            get_status,
+            reqwest::StatusCode::FOUND,
+            "GET should still work after F2 restart"
+        );
 
-        if let Some(location_url) = location 
-            && location_url.contains(&f2_node_id) {
-                found_f2_redirect = true;
-                println!("GET {} redirected to restarted F2", i);
-                break;
-            }
+        if let Some(location_url) = location
+            && location_url.contains(&f2_node_id)
+        {
+            found_f2_redirect = true;
+            println!("GET {} redirected to restarted F2", i);
+            break;
+        }
 
         // Small delay between attempts
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -116,11 +155,17 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
 
     // Note: Due to deterministic placement, F2 might not be the chosen replica for this key
     // So we'll just verify that the system is stable and working
-    println!("F2 redirect found: {} (may be false due to deterministic placement)", found_f2_redirect);
+    println!(
+        "F2 redirect found: {} (may be false due to deterministic placement)",
+        found_f2_redirect
+    );
 
     // Final verification: all GET operations still work
     let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(response_bytes, payload, "Final GET should work with F2 restarted");
+    assert_eq!(
+        response_bytes, payload,
+        "Final GET should work with F2 restarted"
+    );
 
     println!("Get from any replica test successful");
 
@@ -165,31 +210,44 @@ async fn test_get_with_multiple_nodes_down() -> anyhow::Result<()> {
     // Wait for coordinator to detect the nodes as down
     wait_until(8000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;
-        let alive_count = nodes.iter().filter(|n| n.status == NodeStatus::Alive).count();
+        let alive_count = nodes
+            .iter()
+            .filter(|n| n.status == NodeStatus::Alive)
+            .count();
         Ok(alive_count == 1)
-    }).await?;
+    })
+    .await?;
 
     println!("2 nodes marked down, testing GET with only 1 replica alive");
 
     // GET should still work if the remaining node has the data
     let no_redirect_client = create_no_redirect_client()?;
-    let (get_status, location) = get_redirect_location(&no_redirect_client, coord.url(), key).await?;
+    let (get_status, location) =
+        get_redirect_location(&no_redirect_client, coord.url(), key).await?;
 
     if get_status == reqwest::StatusCode::FOUND {
         // GET succeeded - verify it points to the remaining node
         assert!(location.is_some(), "Should have location header");
         let location_url = location.unwrap();
-        assert!(location_url.contains(&remaining_node_url), "Should redirect to remaining alive node");
+        assert!(
+            location_url.contains(&remaining_node_url),
+            "Should redirect to remaining alive node"
+        );
 
         // Verify we can actually read the data
         let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-        assert_eq!(response_bytes, payload, "Should be able to read data from remaining replica");
+        assert_eq!(
+            response_bytes, payload,
+            "Should be able to read data from remaining replica"
+        );
 
         println!("GET successful with only 1 replica alive");
     } else {
         // If the remaining node doesn't have the data (due to placement), GET might fail
         // This is acceptable behavior
-        println!("GET failed with only 1 replica - may be due to placement (remaining node doesn't have the data)");
+        println!(
+            "GET failed with only 1 replica - may be due to placement (remaining node doesn't have the data)"
+        );
     }
 
     // Cleanup
@@ -220,8 +278,14 @@ async fn test_get_load_balancing_across_replicas() -> anyhow::Result<()> {
         let payload_bytes = payload.into_bytes();
         let expected_etag = blake3_hex(&payload_bytes);
 
-        let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload_bytes.clone()).await?;
-        assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed for key: {}", key);
+        let (status, etag, _) =
+            put_via_coordinator(&client, coord.url(), key, payload_bytes.clone()).await?;
+        assert_eq!(
+            status,
+            reqwest::StatusCode::CREATED,
+            "PUT should succeed for key: {}",
+            key
+        );
         assert_eq!(etag, expected_etag, "ETag should match for key: {}", key);
 
         key_payloads.insert(key.to_string(), payload_bytes);
@@ -237,9 +301,16 @@ async fn test_get_load_balancing_across_replicas() -> anyhow::Result<()> {
 
     // Make multiple GET requests for each key and track which volume serves it
     for key in &keys {
-        for _ in 0..3 { // Multiple requests per key to see consistency
-            let (get_status, location) = get_redirect_location(&no_redirect_client, coord.url(), key).await?;
-            assert_eq!(get_status, reqwest::StatusCode::FOUND, "GET should succeed for key: {}", key);
+        for _ in 0..3 {
+            // Multiple requests per key to see consistency
+            let (get_status, location) =
+                get_redirect_location(&no_redirect_client, coord.url(), key).await?;
+            assert_eq!(
+                get_status,
+                reqwest::StatusCode::FOUND,
+                "GET should succeed for key: {}",
+                key
+            );
 
             if let Some(location_url) = location {
                 // Determine which volume served this request
@@ -257,7 +328,11 @@ async fn test_get_load_balancing_across_replicas() -> anyhow::Result<()> {
 
     // Verify that requests are being served (at least one volume is used)
     let total_requests: i32 = volume_usage.values().sum();
-    assert_eq!(total_requests, keys.len() as i32 * 3, "All requests should be served");
+    assert_eq!(
+        total_requests,
+        keys.len() as i32 * 3,
+        "All requests should be served"
+    );
 
     // Due to deterministic placement, we expect consistent routing per key
     // but different keys should potentially use different volumes
@@ -292,7 +367,11 @@ async fn test_get_after_replica_replacement() -> anyhow::Result<()> {
 
     // Write initial data
     let (status, _, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
-    assert_eq!(status, reqwest::StatusCode::CREATED, "Initial PUT should succeed");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "Initial PUT should succeed"
+    );
 
     // Verify initial GET works
     let initial_response = follow_redirect_get(&redirect_client, coord.url(), key).await?;
@@ -318,7 +397,10 @@ async fn test_get_after_replica_replacement() -> anyhow::Result<()> {
     // GET should still work with remaining replicas
     // (the new volume won't have the old data, but other replicas should)
     let post_replacement_response = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(post_replacement_response, payload, "GET should work after replica replacement");
+    assert_eq!(
+        post_replacement_response, payload,
+        "GET should work after replica replacement"
+    );
 
     println!("GET after replica replacement test successful");
 

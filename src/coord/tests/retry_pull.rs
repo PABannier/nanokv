@@ -20,26 +20,35 @@ async fn test_pull_retry_transient_failure() -> anyhow::Result<()> {
     let expected_replicas = test_placement_n(key, &nodes, 3);
     assert_eq!(expected_replicas.len(), 3, "Should have 3 replicas");
 
-    println!("Expected replicas for key '{}': {:?}", key, expected_replicas);
+    println!(
+        "Expected replicas for key '{}': {:?}",
+        key, expected_replicas
+    );
 
     // Inject one-time pull failure on follower F2 (third replica)
     let follower_node = &expected_replicas[2]; // F2 = third replica
-    let follower_volume = volumes.iter()
+    let follower_volume = volumes
+        .iter()
         .find(|v| v.state.node_id == *follower_node)
         .expect("Should find follower volume");
 
     // Inject pull failure using assumed test endpoint
     let fail_url = format!("{}/admin/fail/pull?once=true", follower_volume.url());
     let fail_resp = client.post(&fail_url).send().await;
-    
+
     if let Ok(resp) = fail_resp {
         if resp.status().is_success() {
-            println!("Injected one-time pull failure on follower: {}", follower_node);
+            println!(
+                "Injected one-time pull failure on follower: {}",
+                follower_node
+            );
         } else {
             println!("Warning: Could not inject pull failure, assuming retry logic exists");
         }
     } else {
-        println!("Warning: Pull fault injection endpoint not available, assuming retry logic exists");
+        println!(
+            "Warning: Pull fault injection endpoint not available, assuming retry logic exists"
+        );
     }
 
     // PUT with medium payload (16-32 MiB) to test streaming pull retry
@@ -47,38 +56,64 @@ async fn test_pull_retry_transient_failure() -> anyhow::Result<()> {
     let payload = generate_random_bytes(payload_size);
     let expected_etag = blake3_hex(&payload);
 
-    println!("Starting PUT with {}MB payload that should trigger pull retry", payload_size / (1024*1024));
+    println!(
+        "Starting PUT with {}MB payload that should trigger pull retry",
+        payload_size / (1024 * 1024)
+    );
 
     let start_time = std::time::Instant::now();
-    let (status, etag, len) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
+    let (status, etag, len) =
+        put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
     let elapsed = start_time.elapsed();
 
     // Assert: Request eventually succeeds (201), meaning coordinator retried pull within its time-box
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should eventually succeed after pull retry");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should eventually succeed after pull retry"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
     assert_eq!(len, payload.len() as u64, "Length should match");
 
     println!("PUT completed in {:?} (should show retry delay)", elapsed);
-    assert!(elapsed.as_millis() > 500, "Should take some time due to retry and large payload");
+    assert!(
+        elapsed.as_millis() > 500,
+        "Should take some time due to retry and large payload"
+    );
     assert!(elapsed.as_secs() < 30, "Should not timeout completely");
 
     // Assert: Meta Committed, files present on all 3
     let meta = meta_of(&coord.state.db, key)?.expect("Meta should exist");
     assert_eq!(meta.state, TxState::Committed, "Meta should be committed");
     assert_eq!(meta.replicas.len(), 3, "Should have 3 replicas");
-    assert_eq!(meta.size, payload.len() as u64, "Meta size should match payload");
+    assert_eq!(
+        meta.size,
+        payload.len() as u64,
+        "Meta size should match payload"
+    );
     assert_eq!(meta.etag_hex, expected_etag, "Meta etag should match");
 
     // Verify all replicas have the file with correct size
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All 3 volumes should have the file after pull retry");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All 3 volumes should have the file after pull retry"
+    );
 
     // Verify we can read the data back correctly
     let redirect_client = create_redirect_client()?;
     let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(response_bytes.len(), payload.len(), "Response should have correct length");
-    assert_eq!(response_bytes, payload, "Response should match original payload");
+    assert_eq!(
+        response_bytes.len(),
+        payload.len(),
+        "Response should have correct length"
+    );
+    assert_eq!(
+        response_bytes, payload,
+        "Response should match original payload"
+    );
 
     println!("Pull retry test successful - all replicas have the correct file");
 
@@ -104,7 +139,8 @@ async fn test_pull_failure_multiple_followers() -> anyhow::Result<()> {
     let expected_replicas = test_placement_n(key, &nodes, 3);
 
     // Inject pull failures on both followers (F1 and F2)
-    for replica_node in &expected_replicas[1..] { // Skip head, inject on followers
+    for replica_node in &expected_replicas[1..] {
+        // Skip head, inject on followers
         if let Some(volume) = volumes.iter().find(|v| v.state.node_id == *replica_node) {
             let fail_url = format!("{}/admin/fail/pull?once=true", volume.url());
             let _ = client.post(&fail_url).send().await;
@@ -117,14 +153,21 @@ async fn test_pull_failure_multiple_followers() -> anyhow::Result<()> {
     let payload = generate_random_bytes(payload_size);
     let expected_etag = blake3_hex(&payload);
 
-    println!("Starting PUT with {}MB payload that should trigger multiple pull retries", payload_size / (1024*1024));
+    println!(
+        "Starting PUT with {}MB payload that should trigger multiple pull retries",
+        payload_size / (1024 * 1024)
+    );
 
     let start_time = std::time::Instant::now();
     let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
     let elapsed = start_time.elapsed();
 
     // Should still succeed despite multiple pull failures
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed despite multiple pull failures");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed despite multiple pull failures"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     println!("PUT with multiple pull retries completed in {:?}", elapsed);
@@ -135,12 +178,19 @@ async fn test_pull_failure_multiple_followers() -> anyhow::Result<()> {
 
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     // Verify data integrity after multiple pull retries
     let redirect_client = create_redirect_client()?;
     let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(response_bytes, payload, "Data should be intact after multiple pull retries");
+    assert_eq!(
+        response_bytes, payload,
+        "Data should be intact after multiple pull retries"
+    );
 
     println!("Multiple pull retry test successful");
 
@@ -164,7 +214,7 @@ async fn test_pull_retry_with_read_tmp_failure() -> anyhow::Result<()> {
     let key = "test-read-tmp-retry";
     let nodes = list_nodes(&client, coord.url()).await?;
     let expected_replicas = test_placement_n(key, &nodes, 3);
-    
+
     // Inject read_tmp failure on head node
     let head_node = &expected_replicas[0];
     if let Some(head_volume) = volumes.iter().find(|v| v.state.node_id == *head_node) {
@@ -183,18 +233,29 @@ async fn test_pull_retry_with_read_tmp_failure() -> anyhow::Result<()> {
     let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
 
     // Should succeed after retry
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed after read_tmp retry");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed after read_tmp retry"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     // Verify all replicas have the data
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     // Verify data integrity
     let redirect_client = create_redirect_client()?;
     let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(response_bytes, payload, "Data should be intact after read_tmp retry");
+    assert_eq!(
+        response_bytes, payload,
+        "Data should be intact after read_tmp retry"
+    );
 
     println!("Read_tmp retry test successful");
 
@@ -224,7 +285,10 @@ async fn test_pull_streaming_integrity() -> anyhow::Result<()> {
     if let Some(follower_volume) = volumes.iter().find(|v| v.state.node_id == *follower_node) {
         let fail_url = format!("{}/admin/fail/pull?once=true", follower_volume.url());
         let _ = client.post(&fail_url).send().await;
-        println!("Injected pull failure during streaming on: {}", follower_node);
+        println!(
+            "Injected pull failure during streaming on: {}",
+            follower_node
+        );
     }
 
     // Use a very large payload to ensure streaming behavior
@@ -232,13 +296,20 @@ async fn test_pull_streaming_integrity() -> anyhow::Result<()> {
     let payload = generate_random_bytes(payload_size);
     let expected_etag = blake3_hex(&payload);
 
-    println!("Starting PUT with {}MB payload to test streaming pull retry", payload_size / (1024*1024));
+    println!(
+        "Starting PUT with {}MB payload to test streaming pull retry",
+        payload_size / (1024 * 1024)
+    );
 
     let start_time = std::time::Instant::now();
     let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
     let elapsed = start_time.elapsed();
 
-    assert_eq!(status, reqwest::StatusCode::CREATED, "Large streaming PUT should succeed");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "Large streaming PUT should succeed"
+    );
     assert_eq!(etag, expected_etag, "ETag should match for large payload");
 
     println!("Large streaming PUT completed in {:?}", elapsed);
@@ -246,16 +317,27 @@ async fn test_pull_streaming_integrity() -> anyhow::Result<()> {
     // Verify all replicas have the complete file
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the large file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the large file"
+    );
 
     // Most importantly, verify data integrity for the large file
     let redirect_client = create_redirect_client()?;
     let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(response_bytes.len(), payload.len(), "Large file should have correct length");
-    
+    assert_eq!(
+        response_bytes.len(),
+        payload.len(),
+        "Large file should have correct length"
+    );
+
     // For very large files, we'll just check the hash rather than byte-by-byte comparison
     let response_etag = blake3_hex(&response_bytes);
-    assert_eq!(response_etag, expected_etag, "Large file should have correct hash after streaming pull retry");
+    assert_eq!(
+        response_etag, expected_etag,
+        "Large file should have correct hash after streaming pull retry"
+    );
 
     println!("Streaming pull retry integrity test successful");
 

@@ -1,6 +1,6 @@
-use anyhow::{Result, Context, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use reqwest::Client;
 use std::{
     collections::{HashMap, HashSet},
@@ -11,12 +11,14 @@ use std::{
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
+use crate::command::common::{
+    copy_one, nodes_from_db, nodes_from_explicit, probe_exists, probe_matches,
+};
 use crate::core::{
     meta::{KvDb, Meta, TxState},
     node::NodeInfo,
     placement::{choose_top_n_alive, rank_nodes},
 };
-use crate::command::common::{nodes_from_db, nodes_from_explicit, probe_matches, probe_exists, copy_one};
 use common::constants::META_KEY_PREFIX;
 
 const J_REPAIR_PREFIX: &str = "repair:"; // repair:{key}:{dst} -> Planned|InFlight|Committed|Failed(msg)
@@ -71,7 +73,12 @@ impl std::fmt::Display for RepairReport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-enum MoveState { Planned, InFlight, Committed, Failed }
+enum MoveState {
+    Planned,
+    InFlight,
+    Committed,
+    Failed,
+}
 
 fn jkey(key_enc: &str, dst: &str) -> String {
     format!("{J_REPAIR_PREFIX}{key_enc}:{dst}")
@@ -97,29 +104,53 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
     }
 
     // Node lookups and semaphores
-    let by_id: Arc<HashMap<String, NodeInfo>> =
-        Arc::new(nodes.iter().map(|n| (n.node_id.clone(), n.clone())).collect());
+    let by_id: Arc<HashMap<String, NodeInfo>> = Arc::new(
+        nodes
+            .iter()
+            .map(|n| (n.node_id.clone(), n.clone()))
+            .collect(),
+    );
 
     let per_node_sems: Arc<HashMap<String, Arc<Semaphore>>> = Arc::new(
-        nodes.iter()
-            .map(|n| (n.node_id.clone(), Arc::new(Semaphore::new(args.concurrency_per_node))))
-            .collect()
+        nodes
+            .iter()
+            .map(|n| {
+                (
+                    n.node_id.clone(),
+                    Arc::new(Semaphore::new(args.concurrency_per_node)),
+                )
+            })
+            .collect(),
     );
     let global_sem = Arc::new(Semaphore::new(args.concurrency));
 
     let mut report = RepairReport::default();
 
     // Stream the DB and schedule copy tasks lazily to avoid unbounded memory
-    let mut moves = Vec::<(String /*key*/, u64 /*size*/, String /*etag*/, String /*src*/, String /*dst*/)>::new();
+    let mut moves = Vec::<(
+        String, /*key*/
+        u64,    /*size*/
+        String, /*etag*/
+        String, /*src*/
+        String, /*dst*/
+    )>::new();
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
 
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
         let meta: Meta = serde_json::from_slice(&v)?;
         match meta.state {
-            TxState::Tombstoned => { report.skipped_tombstones += 1; continue; }
+            TxState::Tombstoned => {
+                report.skipped_tombstones += 1;
+                continue;
+            }
             TxState::Committed => {}
             _ => continue,
         }
@@ -143,13 +174,17 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
 
         if present_ids.len() + need.len() < args.n_replicas {
             for id in nodes.iter().map(|n| &n.node_id) {
-                if present_ids.len() + need.len() >= args.n_replicas { break; }
+                if present_ids.len() + need.len() >= args.n_replicas {
+                    break;
+                }
                 if !present_ids.contains(id) && !need.contains(id) {
                     need.push(id.clone());
                 }
             }
         }
-        if need.is_empty() { continue; }
+        if need.is_empty() {
+            continue;
+        }
 
         // Build candidate sources (prefer present set; fall back to any alive with the file)
         let mut sources: Vec<String> = present_ids.iter().cloned().collect();
@@ -164,10 +199,10 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
                 && probe_matches(&http, dst, &key_enc, &meta.etag_hex, meta.size)
                     .await
                     .unwrap_or(false)
-                {
-                    // already good on dst; skip
-                    continue;
-                }
+            {
+                // already good on dst; skip
+                continue;
+            }
 
             // Choose a source that actually has the valid blob
             let mut chosen_src: Option<String> = None;
@@ -176,14 +211,20 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
                     && probe_matches(&http, src, &key_enc, &meta.etag_hex, meta.size)
                         .await
                         .unwrap_or(false)
-                    {
-                        chosen_src = Some(sid.clone());
-                        break;
-                    }
+                {
+                    chosen_src = Some(sid.clone());
+                    break;
+                }
             }
             if let Some(src) = chosen_src {
                 if src != dst_id {
-                    moves.push((key_enc.clone(), meta.size, meta.etag_hex.clone(), src, dst_id));
+                    moves.push((
+                        key_enc.clone(),
+                        meta.size,
+                        meta.etag_hex.clone(),
+                        src,
+                        dst_id,
+                    ));
                 }
             } else {
                 report.skipped_no_source += 1;
@@ -271,7 +312,10 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
         match r {
             Ok(true) => report.succeeded += 1,
             Ok(false) => report.failed += 1,
-            Err(e) => { report.failed += 1; warn!(%e, "repair task join error"); }
+            Err(e) => {
+                report.failed += 1;
+                warn!(%e, "repair task join error");
+            }
         }
     }
 
@@ -292,11 +336,18 @@ async fn refresh_metas(
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
 
         let mut meta: Meta = serde_json::from_slice(&v)?;
-        if meta.state != TxState::Committed { continue; }
+        if meta.state != TxState::Committed {
+            continue;
+        }
 
         // Probe presence on all Alive nodes quickly
         let mut present: HashSet<String> = HashSet::new();
@@ -311,7 +362,8 @@ async fn refresh_metas(
 
         // Order by HRW and trim to N
         let ranked = rank_nodes(&key_enc, nodes);
-        let mut ordered: Vec<String> = ranked.into_iter()
+        let mut ordered: Vec<String> = ranked
+            .into_iter()
             .filter(|n| present.contains(&n.node_id))
             .take(n_replicas)
             .map(|n| n.node_id.clone())
@@ -320,8 +372,12 @@ async fn refresh_metas(
         // If needed, fill remaining with any present to reach N
         if ordered.len() < n_replicas {
             for id in present {
-                if ordered.len() >= n_replicas { break; }
-                if !ordered.contains(&id) { ordered.push(id); }
+                if ordered.len() >= n_replicas {
+                    break;
+                }
+                if !ordered.contains(&id) {
+                    ordered.push(id);
+                }
             }
         }
 

@@ -1,14 +1,13 @@
-use common::api_error::ApiError;
 use crate::core::node::NodeInfo;
 use anyhow::anyhow;
-
+use common::api_error::ApiError;
 
 pub mod guard {
     use futures_util::future::join_all;
     use reqwest::Client;
 
-    use crate::core::op::send_abort_request;
     use crate::core::node::NodeInfo;
+    use crate::core::op::send_abort_request;
 
     pub struct AbortGuard<'a> {
         http: &'a Client,
@@ -27,7 +26,9 @@ pub mod guard {
             }
         }
 
-        pub fn disarm(&mut self) { self.armed = false; }
+        pub fn disarm(&mut self) {
+            self.armed = false;
+        }
     }
 
     impl Drop for AbortGuard<'_> {
@@ -37,7 +38,8 @@ pub mod guard {
                 let replicas = self.replicas.clone();
                 let upload_id = self.upload_id.clone();
                 tokio::spawn(async move {
-                    let futs = replicas.iter()
+                    let futs = replicas
+                        .iter()
                         .map(|r| send_abort_request(&http, r, &upload_id));
                     let _ = join_all(futs).await;
                 });
@@ -51,10 +53,14 @@ pub mod meta {
 
     use common::api_error::ApiError;
 
-    use crate::core::meta::{Meta, KvDb};
+    use crate::core::meta::{KvDb, Meta};
     use crate::core::node::NodeInfo;
 
-    pub fn write_pending_meta(db: &KvDb, meta_key: &str, replicas: &[NodeInfo]) -> Result<String, ApiError> {
+    pub fn write_pending_meta(
+        db: &KvDb,
+        meta_key: &str,
+        replicas: &[NodeInfo],
+    ) -> Result<String, ApiError> {
         let upload_id = Uuid::new_v4().to_string();
 
         let replica_ids = replicas
@@ -74,9 +80,12 @@ pub mod meta {
         meta_key: &str,
         size: u64,
         etag_hex: String,
-        replicas: &[NodeInfo]
+        replicas: &[NodeInfo],
     ) -> Result<(), ApiError> {
-        let replica_ids = replicas.iter().map(|r| r.node_id.clone()).collect::<Vec<_>>();
+        let replica_ids = replicas
+            .iter()
+            .map(|r| r.node_id.clone())
+            .collect::<Vec<_>>();
         let meta = Meta::committed(size, etag_hex, replica_ids);
         db.put(meta_key, &meta)?;
         Ok(())
@@ -84,8 +93,8 @@ pub mod meta {
 }
 
 pub mod prepare {
+    use super::retry::{RetryClass, classify_reqwest, retry_timeboxed};
     use common::api_error::ApiError;
-    use super::retry::{retry_timeboxed, RetryClass, classify_reqwest};
 
     use futures_util::future::try_join_all;
     use reqwest::Client;
@@ -93,30 +102,47 @@ pub mod prepare {
     use crate::core::node::NodeInfo;
     use crate::core::op::retry::RetryConfig;
 
-    pub async fn retry_prepare_all(http: &Client, replicas: &[NodeInfo], key: &str, upload_id: &str) -> Result<(), ApiError> {
+    pub async fn retry_prepare_all(
+        http: &Client,
+        replicas: &[NodeInfo],
+        key: &str,
+        upload_id: &str,
+    ) -> Result<(), ApiError> {
         try_join_all(
             replicas
                 .iter()
-                .map(|r| retry_prepare(http, r, key, upload_id))
-        ).await.map_err(|e| ApiError::Any(e.into()))?;
+                .map(|r| retry_prepare(http, r, key, upload_id)),
+        )
+        .await
+        .map_err(|e| ApiError::Any(e.into()))?;
 
         Ok(())
     }
 
-    pub async fn retry_prepare(http: &Client, replica: &NodeInfo, key: &str, upload_id: &str) -> Result<(), ApiError> {
+    pub async fn retry_prepare(
+        http: &Client,
+        replica: &NodeInfo,
+        key: &str,
+        upload_id: &str,
+    ) -> Result<(), ApiError> {
         let cfg = RetryConfig::default();
 
-        retry_timeboxed(&cfg, || {
-            send_prepare_request(http, replica, key, upload_id, &cfg)
-        }, |e| match e {
-            ApiError::UpstreamStatus(st) => {
-                if st.is_server_error() || *st == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                    RetryClass::Retryable
-                } else { RetryClass::NonRetryable }
-            }
-            ApiError::UpstreamReq(err) => classify_reqwest(None, err),
-            _ => RetryClass::NonRetryable,
-        }).await?;
+        retry_timeboxed(
+            &cfg,
+            || send_prepare_request(http, replica, key, upload_id, &cfg),
+            |e| match e {
+                ApiError::UpstreamStatus(st) => {
+                    if st.is_server_error() || *st == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        RetryClass::Retryable
+                    } else {
+                        RetryClass::NonRetryable
+                    }
+                }
+                ApiError::UpstreamReq(err) => classify_reqwest(None, err),
+                _ => RetryClass::NonRetryable,
+            },
+        )
+        .await?;
 
         Ok(())
     }
@@ -126,7 +152,7 @@ pub mod prepare {
         replica: &NodeInfo,
         key: &str,
         upload_id: &str,
-        cfg: &RetryConfig
+        cfg: &RetryConfig,
     ) -> Result<(), ApiError> {
         let vol_url = format!("{}/internal/prepare", replica.internal_url);
 
@@ -140,17 +166,19 @@ pub mod prepare {
 
         let resp = http.execute(req).await.map_err(ApiError::UpstreamReq)?;
         let st = resp.status();
-        if st.is_success() { Ok(())} else {
+        if st.is_success() {
+            Ok(())
+        } else {
             Err(ApiError::UpstreamStatus(st))
         }
     }
 }
 
 pub mod write {
-    use axum::body::Body;
     use anyhow::anyhow;
-    use reqwest::Client;
+    use axum::body::Body;
     use futures_util::TryStreamExt;
+    use reqwest::Client;
 
     use common::api_error::ApiError;
     use common::schemas::PutResponse;
@@ -161,7 +189,7 @@ pub mod write {
         http: &Client,
         head: &NodeInfo,
         body: Body,
-        upload_id: &str
+        upload_id: &str,
     ) -> Result<(u64, String), ApiError> {
         let stream = body
             .into_data_stream()
@@ -179,10 +207,15 @@ pub mod write {
             .map_err(|e| ApiError::Any(anyhow!("failed to stream to node: {}", e)))?;
 
         if !resp.status().is_success() {
-            return Err(ApiError::Any(anyhow!("failed to stream to node. Volume replied: {}", resp.status())));
+            return Err(ApiError::Any(anyhow!(
+                "failed to stream to node. Volume replied: {}",
+                resp.status()
+            )));
         }
 
-        let put_resp: PutResponse = resp.json::<PutResponse>().await
+        let put_resp: PutResponse = resp
+            .json::<PutResponse>()
+            .await
             .map_err(|e| ApiError::Any(anyhow!("failed to parse volume put response: {}", e)))?;
 
         Ok((put_resp.size, put_resp.etag))
@@ -198,8 +231,8 @@ pub mod pull {
     use common::schemas::PutResponse;
 
     use crate::core::node::NodeInfo;
-    use crate::core::op::retry::{retry_timeboxed, RetryClass, classify_reqwest};
     use crate::core::op::retry::RetryConfig;
+    use crate::core::op::retry::{RetryClass, classify_reqwest, retry_timeboxed};
 
     pub async fn retry_pull_all(
         http: &Client,
@@ -212,8 +245,10 @@ pub mod pull {
         try_join_all(
             followers
                 .iter()
-                .map(|f| retry_pull(http, head, f, upload_id, expected_size, expected_etag))
-        ).await.map_err(|e| ApiError::Any(e.into()))?;
+                .map(|f| retry_pull(http, head, f, upload_id, expected_size, expected_etag)),
+        )
+        .await
+        .map_err(|e| ApiError::Any(e.into()))?;
         Ok(())
     }
 
@@ -227,17 +262,31 @@ pub mod pull {
     ) -> Result<PutResponse, ApiError> {
         let cfg = RetryConfig::default();
 
-        let res = retry_timeboxed(&cfg, || {
-            pull_from_head(http, head, follower, upload_id, expected_size, expected_etag)
-        }, |e| match e {
-            ApiError::UpstreamStatus(st) => {
-                if st.is_server_error() || *st == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                    RetryClass::Retryable
-                } else { RetryClass::NonRetryable }
-            }
-            ApiError::UpstreamReq(err) => classify_reqwest(None, err),
-            _ => RetryClass::NonRetryable,
-        }).await?;
+        let res = retry_timeboxed(
+            &cfg,
+            || {
+                pull_from_head(
+                    http,
+                    head,
+                    follower,
+                    upload_id,
+                    expected_size,
+                    expected_etag,
+                )
+            },
+            |e| match e {
+                ApiError::UpstreamStatus(st) => {
+                    if st.is_server_error() || *st == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        RetryClass::Retryable
+                    } else {
+                        RetryClass::NonRetryable
+                    }
+                }
+                ApiError::UpstreamReq(err) => classify_reqwest(None, err),
+                _ => RetryClass::NonRetryable,
+            },
+        )
+        .await?;
 
         Ok(res)
     }
@@ -262,10 +311,14 @@ pub mod pull {
 
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
-                if let Ok(head) = resp.json::<PutResponse>().await { Ok(head) } else {
-                    Err(ApiError::Any(anyhow!("failed to parse volume put response")))
+                if let Ok(head) = resp.json::<PutResponse>().await {
+                    Ok(head)
+                } else {
+                    Err(ApiError::Any(anyhow!(
+                        "failed to parse volume put response"
+                    )))
                 }
-            },
+            }
             Ok(_) => Err(ApiError::Any(anyhow!("failed to pull from head"))),
             Err(e) => Err(ApiError::UpstreamReq(e)),
         }
@@ -273,9 +326,9 @@ pub mod pull {
 }
 
 pub mod commit {
-    use common::api_error::ApiError;
-    use super::retry::{retry_timeboxed, RetryClass, classify_reqwest};
     use super::retry::RetryConfig;
+    use super::retry::{RetryClass, classify_reqwest, retry_timeboxed};
+    use common::api_error::ApiError;
 
     use futures_util::future::try_join_all;
     use reqwest::Client;
@@ -286,31 +339,43 @@ pub mod commit {
         http: &Client,
         replicas: &[NodeInfo],
         upload_id: &str,
-        key: &str
+        key: &str,
     ) -> Result<(), ApiError> {
         try_join_all(
             replicas
                 .iter()
-                .map(|r| retry_commit(http, r, upload_id, key))
-        ).await.map_err(|e| ApiError::Any(e.into()))?;
+                .map(|r| retry_commit(http, r, upload_id, key)),
+        )
+        .await
+        .map_err(|e| ApiError::Any(e.into()))?;
 
         Ok(())
     }
 
-    pub async fn retry_commit(http: &Client, replica: &NodeInfo, upload_id: &str, key: &str) -> Result<(), ApiError> {
+    pub async fn retry_commit(
+        http: &Client,
+        replica: &NodeInfo,
+        upload_id: &str,
+        key: &str,
+    ) -> Result<(), ApiError> {
         let cfg = RetryConfig::default();
 
-        retry_timeboxed(&cfg, || {
-            send_commit_request(http, replica, upload_id, key)
-        }, |e| match e {
-            ApiError::UpstreamStatus(st) => {
-                if st.is_server_error() || *st == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                    RetryClass::Retryable
-                } else { RetryClass::NonRetryable }
-            }
-            ApiError::UpstreamReq(err) => classify_reqwest(None, err),
-            _ => RetryClass::NonRetryable,
-        }).await?;
+        retry_timeboxed(
+            &cfg,
+            || send_commit_request(http, replica, upload_id, key),
+            |e| match e {
+                ApiError::UpstreamStatus(st) => {
+                    if st.is_server_error() || *st == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        RetryClass::Retryable
+                    } else {
+                        RetryClass::NonRetryable
+                    }
+                }
+                ApiError::UpstreamReq(err) => classify_reqwest(None, err),
+                _ => RetryClass::NonRetryable,
+            },
+        )
+        .await?;
 
         Ok(())
     }
@@ -319,7 +384,7 @@ pub mod commit {
         http: &Client,
         node: &NodeInfo,
         upload_id: &str,
-        key: &str
+        key: &str,
     ) -> Result<(), ApiError> {
         let req_url = format!("{}/internal/commit", node.internal_url);
 
@@ -331,23 +396,22 @@ pub mod commit {
         let res = req.send().await.map_err(ApiError::UpstreamReq)?;
         let st = res.status();
 
-        if st.is_success() { Ok(()) } else {
+        if st.is_success() {
+            Ok(())
+        } else {
             Err(ApiError::UpstreamStatus(res.status()))
         }
     }
-
 }
 
 async fn send_abort_request(
     http: &reqwest::Client,
     node: &NodeInfo,
-    upload_id: &str
+    upload_id: &str,
 ) -> Result<(), ApiError> {
     let req_url = format!("{}/internal/abort", node.internal_url);
 
-    let req = http
-        .post(req_url)
-        .query(&[("upload_id", upload_id)]);
+    let req = http.post(req_url).query(&[("upload_id", upload_id)]);
 
     let res = req
         .send()
@@ -355,16 +419,19 @@ async fn send_abort_request(
         .map_err(|e| ApiError::Any(anyhow!("failed to send request to node: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(ApiError::Any(anyhow!("failed to send request to node. Node replied: {}", res.status())));
+        return Err(ApiError::Any(anyhow!(
+            "failed to send request to node. Node replied: {}",
+            res.status()
+        )));
     }
 
     Ok(())
 }
 
 mod retry {
-    use std::future::Future;
-    use tokio::time::{sleep, Instant, Duration};
     use rand::random_range;
+    use std::future::Future;
+    use tokio::time::{Duration, Instant, sleep};
 
     const DEFAULT_TOTAL_BUDGET: Duration = Duration::from_secs(60);
     const DEFAULT_PER_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -374,8 +441,8 @@ mod retry {
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum RetryClass {
-        Retryable,     // transient errors, 5xx, network errors, etc.
-        NonRetryable,  // 4xx, checksum mismatch, logic errors
+        Retryable,    // transient errors, 5xx, network errors, etc.
+        NonRetryable, // 4xx, checksum mismatch, logic errors
     }
 
     pub struct RetryConfig {
@@ -445,7 +512,10 @@ mod retry {
         }
     }
 
-    pub fn classify_reqwest(resp_status: Option<reqwest::StatusCode>, err: &reqwest::Error) -> RetryClass {
+    pub fn classify_reqwest(
+        resp_status: Option<reqwest::StatusCode>,
+        err: &reqwest::Error,
+    ) -> RetryClass {
         if err.is_timeout() || err.is_connect() || err.is_request() || err.is_body() {
             return RetryClass::Retryable;
         }

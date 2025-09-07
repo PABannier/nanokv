@@ -1,32 +1,32 @@
-use walkdir::WalkDir;
-use std::{cmp::Ordering, time::{Duration, SystemTime}};
-use tokio::{fs::{self, File, OpenOptions}};
-use tokio_util::io::ReaderStream;
-use serde::{Deserialize};
 use axum::{
     body::Body,
-    extract::{Path, State, Query, Json},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
+use serde::Deserialize;
+use std::{
+    cmp::Ordering,
+    time::{Duration, SystemTime},
+};
+use tokio::fs::{self, File, OpenOptions};
+use tokio_util::io::ReaderStream;
+use walkdir::WalkDir;
 
+use crate::replicate::{CommitRequest, PullRequest, pull_from_head};
 use crate::state::VolumeState;
-use crate::replicate::{PullRequest, CommitRequest, pull_from_head};
-use common::{api_error::ApiError, constants::{BLOB_DIR_NAME, TMP_DIR_NAME}};
-use common::schemas::{PutResponse, ListResponse, BlobHead, SweepTmpQuery, SweepTmpResponse};
 use common::file_utils::{
-    sanitize_key,
-    fsync_dir,
-    blob_path,
-    tmp_path,
-    stream_to_file_with_hash,
-    file_hash,
-    file_exists,
+    blob_path, file_exists, file_hash, fsync_dir, sanitize_key, stream_to_file_with_hash, tmp_path,
+};
+use common::schemas::{BlobHead, ListResponse, PutResponse, SweepTmpQuery, SweepTmpResponse};
+use common::{
+    api_error::ApiError,
+    constants::{BLOB_DIR_NAME, TMP_DIR_NAME},
 };
 
 #[derive(Deserialize, Debug)]
 pub struct PrepareRequest {
-    pub key: String,  // Key is already encoded
+    pub key: String, // Key is already encoded
     pub upload_id: String,
 }
 
@@ -41,7 +41,9 @@ pub async fn prepare_handler(
     ctx.fault_injector.apply_latency().await;
 
     if ctx.fault_injector.should_fail_prepare() {
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: prepare failed")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: prepare failed"
+        )));
     }
 
     let final_path = blob_path(&ctx.data_root, &req.key);
@@ -100,7 +102,7 @@ pub async fn write_handler(
 
     // Stream to temp file, get size and etag
     let (size, etag) = stream_to_file_with_hash(body.into_data_stream(), &mut tmp_file).await?;
-    tmp_file.sync_all().await?;  // make sure all buffered data is dumped onto disk (durable temp)
+    tmp_file.sync_all().await?; // make sure all buffered data is dumped onto disk (durable temp)
 
     // Build response headers
     let resp = PutResponse { etag, size };
@@ -118,7 +120,9 @@ pub async fn read_handler(
     ctx.fault_injector.apply_latency().await;
 
     if ctx.fault_injector.should_fail_read_tmp() {
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: read tmp failed")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: read tmp failed"
+        )));
     }
 
     let tmp_path = tmp_path(&ctx.data_root, &upload_id);
@@ -145,7 +149,9 @@ pub async fn pull_handler(
     ctx.fault_injector.apply_latency().await;
 
     if ctx.fault_injector.should_fail_pull() {
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: pull failed")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: pull failed"
+        )));
     }
 
     let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
@@ -166,7 +172,9 @@ pub async fn pull_handler(
     if ctx.fault_injector.should_fail_pull_mid_stream() {
         // Start the pull but fail partway through
         let _ = pull_from_head(&ctx, &req.from, &mut tmp_file).await;
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: pull failed mid-stream")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: pull failed mid-stream"
+        )));
     }
 
     // Make a request to the head node and stream the response to file
@@ -183,10 +191,12 @@ pub async fn pull_handler(
         return Err(ApiError::ChecksumMismatch);
     }
 
-    let resp = PutResponse { etag: final_etag, size };
+    let resp = PutResponse {
+        etag: final_etag,
+        size,
+    };
     Ok((StatusCode::CREATED, axum::Json(resp)))
 }
-
 
 // POST /commit?upload_id=?key=
 pub async fn commit_handler(
@@ -199,13 +209,17 @@ pub async fn commit_handler(
     ctx.fault_injector.apply_latency().await;
 
     if ctx.fault_injector.should_fail_commit() {
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: commit failed")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: commit failed"
+        )));
     }
 
     if ctx.fault_injector.should_timeout_commit() {
         // Simulate a long timeout
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: commit timed out")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: commit timed out"
+        )));
     }
 
     let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
@@ -248,11 +262,10 @@ pub async fn abort_handler(
     Ok(StatusCode::OK)
 }
 
-
 // GET /:key
 pub async fn get_handler(
     Path(raw_key): Path<String>,
-    State(ctx): State<VolumeState>
+    State(ctx): State<VolumeState>,
 ) -> Result<impl IntoResponse, ApiError> {
     let key_enc = sanitize_key(&raw_key)?;
     let path = blob_path(&ctx.data_root, &key_enc);
@@ -268,11 +281,10 @@ pub async fn get_handler(
     Ok((StatusCode::OK, body).into_response())
 }
 
-
 // DELETE /:key
 pub async fn delete_handler(
     Path(raw_key): Path<String>,
-    State(ctx): State<VolumeState>
+    State(ctx): State<VolumeState>,
 ) -> Result<StatusCode, ApiError> {
     let key_enc = sanitize_key(&raw_key)?;
     let path = blob_path(&ctx.data_root, &key_enc);
@@ -286,9 +298,8 @@ pub async fn delete_handler(
 #[derive(Deserialize)]
 pub struct ListRequest {
     pub limit: Option<usize>,
-    pub after: Option<String>,  // percent-encoded cursor (exclusive)
+    pub after: Option<String>, // percent-encoded cursor (exclusive)
 }
-
 
 const DEFAULT_PAGE_LIMIT: usize = 1000;
 const MAX_PAGE_LIMIT: usize = 5000;
@@ -297,7 +308,10 @@ pub async fn admin_list_handler(
     State(ctx): State<VolumeState>,
     Query(req): Query<ListRequest>,
 ) -> Result<Json<ListResponse>, ApiError> {
-    let limit = req.limit.unwrap_or(DEFAULT_PAGE_LIMIT).clamp(1, MAX_PAGE_LIMIT);
+    let limit = req
+        .limit
+        .unwrap_or(DEFAULT_PAGE_LIMIT)
+        .clamp(1, MAX_PAGE_LIMIT);
     let after_enc = req.after.unwrap_or_default();
 
     // Walk blobs/aa/bb/<key>, flatten into encoded keys
@@ -332,11 +346,12 @@ pub async fn admin_list_handler(
     Ok(Json(ListResponse { keys, next_after }))
 }
 
-
 // GET /admin/blob?key=...&deep=...
 #[derive(Deserialize)]
-pub struct BlobRequest { key: String, deep: Option<bool> }
-
+pub struct BlobRequest {
+    key: String,
+    deep: Option<bool>,
+}
 
 pub async fn admin_blob_handler(
     State(ctx): State<VolumeState>,
@@ -348,7 +363,11 @@ pub async fn admin_blob_handler(
     let exists = file_exists(&path).await;
 
     if !exists {
-        return Ok(Json(BlobHead { exists, size: 0, etag: None }));
+        return Ok(Json(BlobHead {
+            exists,
+            size: 0,
+            etag: None,
+        }));
     }
 
     let size = fs::metadata(&path).await?.len();
@@ -359,7 +378,11 @@ pub async fn admin_blob_handler(
         None
     };
 
-    Ok(Json(BlobHead { exists: true, size, etag }))
+    Ok(Json(BlobHead {
+        exists: true,
+        size,
+        etag,
+    }))
 }
 
 // POST /admin/sweep-tmp?sweep_age_secs=
@@ -377,10 +400,18 @@ pub async fn admin_sweep_tmp_handler(
 
     if root.exists() {
         for entry in WalkDir::new(&root).min_depth(1).max_depth(1) {
-            let entry = match entry { Ok(e) => e, Err(_) => continue };
-            if !entry.file_type().is_file() { continue; }
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if !entry.file_type().is_file() {
+                continue;
+            }
             let p = entry.into_path();
-            let meta = match fs::metadata(&p).await { Ok(m) => m, Err(_) => continue };
+            let meta = match fs::metadata(&p).await {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
             let mt = meta.modified().unwrap_or(now);
             if mt <= cutoff {
                 let _ = tokio::fs::remove_file(&p).await;
@@ -391,5 +422,8 @@ pub async fn admin_sweep_tmp_handler(
         }
     }
 
-    Ok(Json(SweepTmpResponse { removed, kept_recent: kept }))
+    Ok(Json(SweepTmpResponse {
+        removed,
+        kept_recent: kept,
+    }))
 }

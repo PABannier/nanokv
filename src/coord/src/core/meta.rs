@@ -1,6 +1,6 @@
-use std::{path::Path, sync::Arc, fmt::Display};
-use rocksdb::{Options, DB, ReadOptions, IteratorMode};
-use serde::{de::DeserializeOwned, Serialize, Deserialize};
+use rocksdb::{DB, IteratorMode, Options, ReadOptions};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::{fmt::Display, path::Path, sync::Arc};
 
 use common::time_utils::utc_now_ms;
 
@@ -19,7 +19,9 @@ impl KvDb {
         opts.set_max_open_files(MAX_OPEN_FILES);
         opts.set_compression_type(rocksdb::DBCompressionType::Zstd);
         let db = DB::open(&opts, path)?;
-        Ok(Self { inner: Arc::new(db) })
+        Ok(Self {
+            inner: Arc::new(db),
+        })
     }
 
     pub fn get<T: DeserializeOwned>(&self, key: &str) -> anyhow::Result<Option<T>> {
@@ -51,17 +53,17 @@ impl KvDb {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TxState {
-    Pending,     // upload started, not committed
-    Committed,   // fully durable and visible
-    Tombstoned   // deleted (logical)
+    Pending,    // upload started, not committed
+    Committed,  // fully durable and visible
+    Tombstoned, // deleted (logical)
 }
 
 impl Display for TxState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TxState::Pending => write!(f, "Pending"),
-            TxState::Committed  => write!(f, "Committed"),
-            TxState::Tombstoned  => write!(f, "Tombstoned"),
+            TxState::Committed => write!(f, "Committed"),
+            TxState::Tombstoned => write!(f, "Tombstoned"),
         }
     }
 }
@@ -70,10 +72,10 @@ impl Display for TxState {
 pub struct Meta {
     pub state: TxState,
     pub size: u64,
-    pub etag_hex: String,           // hex blake3
-    pub created_ms: i128,           // epoch ms
-    pub upload_id: Option<String>,  // present during Pending
-    pub replicas: Vec<String>,      // node_ids
+    pub etag_hex: String,          // hex blake3
+    pub created_ms: i128,          // epoch ms
+    pub upload_id: Option<String>, // present during Pending
+    pub replicas: Vec<String>,     // node_ids
 }
 
 impl Meta {

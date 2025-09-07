@@ -1,20 +1,20 @@
 use anyhow::{Context, Result, bail};
-use std::path::PathBuf;
-use url::Url;
-use std::fmt::Display;
-use tracing::{info, warn};
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio::sync::Semaphore;
 use clap::Parser;
-use reqwest::Client;
-use std::time::Duration;
 use futures::stream::{self, StreamExt};
+use reqwest::Client;
 use serde_json;
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
+use tracing::{info, warn};
+use url::Url;
 
 use common::constants::META_KEY_PREFIX;
-use common::schemas::{BlobHead, ListResponse};
 use common::file_utils::meta_key_for;
+use common::schemas::{BlobHead, ListResponse};
 
 use crate::core::meta::{KvDb, Meta, TxState};
 
@@ -53,9 +53,9 @@ pub struct VerifyArgs {
 struct VerifyReport {
     pub scanned_keys: usize,
     pub under_replicated: usize,
-    pub corrupted: usize,            // exists but size/etag mismatch
-    pub unindexed: usize,            // file exists but no meta
-    pub should_gc: usize,            // file exists + meta tombstoned
+    pub corrupted: usize, // exists but size/etag mismatch
+    pub unindexed: usize, // file exists but no meta
+    pub should_gc: usize, // file exists + meta tombstoned
 }
 
 impl VerifyReport {
@@ -69,7 +69,6 @@ impl VerifyReport {
         }
     }
 }
-
 
 impl VerifyReport {
     fn merge_from(&mut self, other: &Self) {
@@ -92,7 +91,6 @@ impl Display for VerifyReport {
         Ok(())
     }
 }
-
 
 pub async fn verify(args: VerifyArgs) -> anyhow::Result<()> {
     // Build node map: node_id -> internal_url
@@ -119,12 +117,27 @@ pub async fn verify(args: VerifyArgs) -> anyhow::Result<()> {
 
     let mut report = VerifyReport::new(0);
 
-    let db_part =
-        walk_db(&db, &http, &nodes, args.deep, args.concurrency, args.http_timeout_secs, per_node.clone()).await?;
+    let db_part = walk_db(
+        &db,
+        &http,
+        &nodes,
+        args.deep,
+        args.concurrency,
+        args.http_timeout_secs,
+        per_node.clone(),
+    )
+    .await?;
     report.merge_from(&db_part);
 
-    let vol_part =
-        walk_volumes(&db, &http, &nodes, args.fix, args.concurrency, args.http_timeout_secs).await?;
+    let vol_part = walk_volumes(
+        &db,
+        &http,
+        &nodes,
+        args.fix,
+        args.concurrency,
+        args.http_timeout_secs,
+    )
+    .await?;
     report.merge_from(&vol_part);
 
     info!("{}", report);
@@ -146,10 +159,17 @@ async fn walk_db(
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
         let meta: Meta = serde_json::from_slice(&v)?;
-        if !matches!(meta.state, TxState::Committed) { continue; }
+        if !matches!(meta.state, TxState::Committed) {
+            continue;
+        }
         keys.push((key_enc, meta));
     }
 
@@ -180,7 +200,9 @@ async fn walk_db(
                     };
 
                     // Per-node slot
-                    let Some(sem) = per_node.get(node_id) else { continue; };
+                    let Some(sem) = per_node.get(node_id) else {
+                        continue;
+                    };
                     let _permit = sem.acquire().await.ok();
 
                     // Build URL: {base}/admin/blob?key=...&deep=...
@@ -194,17 +216,21 @@ async fn walk_db(
                     let mut attempts = 0usize;
                     let head: Option<BlobHead> = loop {
                         attempts += 1;
-                        match http.get(url.clone())
+                        match http
+                            .get(url.clone())
                             .timeout(per_request_timeout)
-                            .send().await
+                            .send()
+                            .await
                         {
-                            Ok(resp) if resp.status().is_success() => match resp.json::<BlobHead>().await {
-                                Ok(h) => break Some(h),
-                                Err(e) => {
-                                    warn!(%e, "bad JSON from {}", url);
-                                    break None;
+                            Ok(resp) if resp.status().is_success() => {
+                                match resp.json::<BlobHead>().await {
+                                    Ok(h) => break Some(h),
+                                    Err(e) => {
+                                        warn!(%e, "bad JSON from {}", url);
+                                        break None;
+                                    }
                                 }
-                            },
+                            }
                             Ok(resp) => {
                                 // 5xx retryable, 4xx treat as missing
                                 if resp.status().is_server_error() && attempts < 3 {
@@ -215,7 +241,9 @@ async fn walk_db(
                                 }
                             }
                             Err(e) => {
-                                if (e.is_connect() || e.is_timeout() || e.is_request()) && attempts < 3 {
+                                if (e.is_connect() || e.is_timeout() || e.is_request())
+                                    && attempts < 3
+                                {
                                     continue;
                                 } else {
                                     warn!(error = %e, %url, "head transport error");
@@ -269,8 +297,10 @@ async fn walk_db(
         }
     }
 
-    info!("verify-db: scanned={} (of {}) under_repl={} corrupted={}",
-        acc.scanned_keys, total, acc.under_replicated, acc.corrupted);
+    info!(
+        "verify-db: scanned={} (of {}) under_repl={} corrupted={}",
+        acc.scanned_keys, total, acc.under_replicated, acc.corrupted
+    );
 
     Ok(acc)
 }
@@ -290,7 +320,10 @@ async fn walk_volumes(
     let per_request_timeout = Duration::from_secs(http_timeout_secs);
 
     // Build list of (node_id, base_url)
-    let vols: Vec<(String, Url)> = nodes.iter().map(|(id, u)| (id.clone(), u.clone())).collect();
+    let vols: Vec<(String, Url)> = nodes
+        .iter()
+        .map(|(id, u)| (id.clone(), u.clone()))
+        .collect();
 
     let results = stream::iter(vols)
         .map(|(node_id, base)| {
@@ -312,11 +345,15 @@ async fn walk_volumes(
                         }
                     }
 
-                    let page = match http.get(url.clone())
+                    let page = match http
+                        .get(url.clone())
                         .timeout(per_request_timeout)
-                        .send().await
+                        .send()
+                        .await
                     {
-                        Ok(r) if r.status().is_success() => r.json::<ListResponse>().await
+                        Ok(r) if r.status().is_success() => r
+                            .json::<ListResponse>()
+                            .await
                             .with_context(|| format!("decoding list page from {}", base)),
                         Ok(r) => {
                             warn!(status = %r.status(), node=%node_id, "list non-success");
@@ -340,7 +377,11 @@ async fn walk_volumes(
                                             let mut del = base.clone();
                                             del.set_path("/internal/delete");
                                             del.query_pairs_mut().append_pair("key", &key_enc);
-                                            let _ = http.post(del).timeout(per_request_timeout).send().await;
+                                            let _ = http
+                                                .post(del)
+                                                .timeout(per_request_timeout)
+                                                .send()
+                                                .await;
                                         }
                                     }
                                     TxState::Committed => { /* ok */ }
@@ -373,8 +414,10 @@ async fn walk_volumes(
         }
     }
 
-    info!("verify-vol: unindexed={} should_gc={} (fix={})",
-        acc.unindexed, acc.should_gc, fix);
+    info!(
+        "verify-vol: unindexed={} should_gc={} (fix={})",
+        acc.unindexed, acc.should_gc, fix
+    );
 
     Ok(acc)
 }
@@ -388,8 +431,7 @@ fn parse_nodes(items: &[String]) -> Result<HashMap<String, Url>> {
                 .with_context(|| format!("bad URL for node {}: {}", id, url_str))?;
             out.insert(id.to_string(), url);
         } else {
-            let url = Url::parse(raw)
-                .with_context(|| format!("bad URL: {}", raw))?;
+            let url = Url::parse(raw).with_context(|| format!("bad URL: {}", raw))?;
             let id = derive_node_id(&url);
             out.insert(id, url);
         }

@@ -19,16 +19,23 @@ pub struct HeartbeatRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct PutResponse { pub etag: String, pub size: u64 }
+pub struct PutResponse {
+    pub etag: String,
+    pub size: u64,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct ListResponse {
-    pub keys: Vec<String>,  // percent-encoded keys
+    pub keys: Vec<String>, // percent-encoded keys
     pub next_after: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct BlobHead { pub exists: bool, pub size: u64, pub etag: Option<String> }
+pub struct BlobHead {
+    pub exists: bool,
+    pub size: u64,
+    pub etag: Option<String>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SweepTmpQuery {

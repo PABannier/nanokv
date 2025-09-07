@@ -1,34 +1,28 @@
-use std::time::{Instant};
+use anyhow::anyhow;
 use axum::{
     body::Body,
-    extract::{Path, State, Json},
+    extract::{Json, Path, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
 use futures_util::future::try_join_all;
-use anyhow::anyhow;
+use std::time::Instant;
 
-use common::schemas::{JoinRequest, HeartbeatRequest};
-use common::time_utils::utc_now_ms;
-use common::constants::NODE_KEY_PREFIX;
 use common::api_error::ApiError;
-use common::url_utils::sanitize_url;
-use common::file_utils::{
-    sanitize_key,
-    meta_key_for,
-};
+use common::constants::NODE_KEY_PREFIX;
 use common::file_utils::parse_content_length;
+use common::file_utils::{meta_key_for, sanitize_key};
+use common::schemas::{HeartbeatRequest, JoinRequest};
+use common::time_utils::utc_now_ms;
+use common::url_utils::sanitize_url;
 
-use crate::core::op::{meta, prepare, guard::AbortGuard, write, pull, commit};
-use crate::core::node::{NodeInfo, NodeStatus, NodeRuntime};
-use crate::core::state::CoordinatorState;
 use crate::core::meta::{Meta, TxState};
+use crate::core::node::{NodeInfo, NodeRuntime, NodeStatus};
+use crate::core::op::{commit, guard::AbortGuard, meta, prepare, pull, write};
 use crate::core::placement::{
-    choose_top_n_alive,
-    get_volume_url_for_key,
-    get_all_volume_urls_for_key
+    choose_top_n_alive, get_all_volume_urls_for_key, get_volume_url_for_key,
 };
-
+use crate::core::state::CoordinatorState;
 
 // PUT /:key
 /// A PUT request to create or replace an object, orchestrated in a 2 phase commit.
@@ -48,14 +42,19 @@ pub async fn put_object(
 
     // Find replicas
     let replicas = {
-        let nodes = ctx.nodes
+        let nodes = ctx
+            .nodes
             .read()
-            .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?.values().map(|n| n.info.clone())
+            .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
+            .values()
+            .map(|n| n.info.clone())
             .collect::<Vec<_>>();
         choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas)
     };
 
-    if replicas.len() < ctx.n_replicas { return Err(ApiError::NoQuorum); }
+    if replicas.len() < ctx.n_replicas {
+        return Err(ApiError::NoQuorum);
+    }
 
     // Declare an inflight upload
     let _permit = ctx.inflight.acquire().await.unwrap();
@@ -71,10 +70,19 @@ pub async fn put_object(
 
     // Write to the head node (single-shot; long timeout). If this fails, abort.
     let head = replicas.first().unwrap();
-    let (size, etag) = write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id).await?;
+    let (size, etag) =
+        write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id).await?;
 
     // Pull all from head with a retry
-    pull::retry_pull_all(&ctx.http_client, head, &replicas[1..], &upload_id, size, &etag).await?;
+    pull::retry_pull_all(
+        &ctx.http_client,
+        head,
+        &replicas[1..],
+        &upload_id,
+        size,
+        &etag,
+    )
+    .await?;
 
     // At this point, all replicas have the data in temporary files. We can disarm the
     // guard. If the commit fails, a verify or clean operation will clean up the temporary
@@ -89,8 +97,14 @@ pub async fn put_object(
 
     // Build response headers
     let mut resp_headers = HeaderMap::new();
-    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap());
-    resp_headers.insert("Content-Length", HeaderValue::from_str(&size.to_string()).unwrap());
+    resp_headers.insert(
+        "ETag",
+        HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap(),
+    );
+    resp_headers.insert(
+        "Content-Length",
+        HeaderValue::from_str(&size.to_string()).unwrap(),
+    );
 
     Ok((StatusCode::CREATED, resp_headers))
 }
@@ -98,7 +112,7 @@ pub async fn put_object(
 // GET /:key
 pub async fn get_object(
     Path(raw_key): Path<String>,
-    State(ctx): State<CoordinatorState>
+    State(ctx): State<CoordinatorState>,
 ) -> Result<impl IntoResponse, ApiError> {
     let key_enc = sanitize_key(&raw_key)?;
     let meta_key = meta_key_for(&key_enc);
@@ -113,23 +127,39 @@ pub async fn get_object(
     let volume_url_for_key = format!("{}/blobs/{}", volume_url, key_enc);
 
     let mut resp_headers = HeaderMap::new();
-    resp_headers.insert("Location", HeaderValue::from_str(&volume_url_for_key).unwrap());
-    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap());
-    resp_headers.insert("Content-Length", HeaderValue::from_str(&meta.size.to_string()).unwrap());
+    resp_headers.insert(
+        "Location",
+        HeaderValue::from_str(&volume_url_for_key).unwrap(),
+    );
+    resp_headers.insert(
+        "ETag",
+        HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap(),
+    );
+    resp_headers.insert(
+        "Content-Length",
+        HeaderValue::from_str(&meta.size.to_string()).unwrap(),
+    );
 
     Ok((StatusCode::FOUND, resp_headers).into_response())
 }
 
 // DELETE /:key
-async fn delete_object_on_volume(ctx: &CoordinatorState, vol_url: &str) -> Result<StatusCode, ApiError> {
+async fn delete_object_on_volume(
+    ctx: &CoordinatorState,
+    vol_url: &str,
+) -> Result<StatusCode, ApiError> {
     let req = ctx.http_client.delete(vol_url);
 
-    let res = req.send()
+    let res = req
+        .send()
         .await
         .map_err(|e| ApiError::Any(anyhow!("failed to send request to volume: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(ApiError::Any(anyhow!("failed to delete object. Volume replied: {}", res.status())));
+        return Err(ApiError::Any(anyhow!(
+            "failed to delete object. Volume replied: {}",
+            res.status()
+        )));
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -137,7 +167,7 @@ async fn delete_object_on_volume(ctx: &CoordinatorState, vol_url: &str) -> Resul
 
 pub async fn delete_object(
     Path(raw_key): Path<String>,
-    State(ctx): State<CoordinatorState>
+    State(ctx): State<CoordinatorState>,
 ) -> Result<StatusCode, ApiError> {
     let key_enc = sanitize_key(&raw_key)?;
     let meta_key = meta_key_for(&key_enc);
@@ -163,24 +193,27 @@ pub async fn delete_object(
 
     let results = try_join_all(
         volume_urls_for_key
-        .iter()
-        .map(|url| delete_object_on_volume(&ctx, url))
-    ).await?;
+            .iter()
+            .map(|url| delete_object_on_volume(&ctx, url)),
+    )
+    .await?;
 
     for code in results {
         if code != StatusCode::NO_CONTENT {
-            return Err(ApiError::Any(anyhow!("failed to delete object. Volume replied: {}", code)));
+            return Err(ApiError::Any(anyhow!(
+                "failed to delete object. Volume replied: {}",
+                code
+            )));
         }
     }
 
     Ok(StatusCode::NO_CONTENT)
 }
 
-
 // HEAD /:key
 pub async fn head_object(
     Path(raw_key): Path<String>,
-    State(ctx): State<CoordinatorState>
+    State(ctx): State<CoordinatorState>,
 ) -> Result<(StatusCode, HeaderMap), ApiError> {
     let key_enc = sanitize_key(&raw_key)?;
     let meta_key = meta_key_for(&key_enc);
@@ -192,20 +225,32 @@ pub async fn head_object(
     };
 
     let mut resp_headers = HeaderMap::new();
-    resp_headers.insert("State", HeaderValue::from_str(&meta.state.to_string()).unwrap());
-    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap());
-    resp_headers.insert("Content-Length", HeaderValue::from_str(&meta.size.to_string()).unwrap());
+    resp_headers.insert(
+        "State",
+        HeaderValue::from_str(&meta.state.to_string()).unwrap(),
+    );
+    resp_headers.insert(
+        "ETag",
+        HeaderValue::from_str(&format!("\"{}\"", &meta.etag_hex)).unwrap(),
+    );
+    resp_headers.insert(
+        "Content-Length",
+        HeaderValue::from_str(&meta.size.to_string()).unwrap(),
+    );
 
     Ok((StatusCode::OK, resp_headers))
 }
 
 // GET /admin/nodes
 pub async fn list_nodes(
-    State(ctx): State<CoordinatorState>
+    State(ctx): State<CoordinatorState>,
 ) -> Result<(StatusCode, impl IntoResponse), ApiError> {
-    let nodes = ctx.nodes
+    let nodes = ctx
+        .nodes
         .read()
-        .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?.values().map(|v| v.info.clone())
+        .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
+        .values()
+        .map(|v| v.info.clone())
         .collect::<Vec<_>>();
 
     Ok((StatusCode::OK, axum::Json(nodes)))
@@ -220,7 +265,12 @@ pub async fn join_node(
 
     let mut nodes = match ctx.nodes.write() {
         Ok(nodes) => nodes,
-        Err(e) => return Err(ApiError::Any(anyhow!("failed to acquire nodes lock: {}", e))),
+        Err(e) => {
+            return Err(ApiError::Any(anyhow!(
+                "failed to acquire nodes lock: {}",
+                e
+            )));
+        }
     };
 
     let clean_public_url = sanitize_url(&req.public_url)?;
@@ -237,9 +287,13 @@ pub async fn join_node(
         status: NodeStatus::Alive,
         version: req.version,
     };
-    let runtime = NodeRuntime { info: node_info.clone(), last_seen: Instant::now() };
+    let runtime = NodeRuntime {
+        info: node_info.clone(),
+        last_seen: Instant::now(),
+    };
 
-    ctx.db.put(&format!("{}:{}", NODE_KEY_PREFIX, req.node_id), &node_info)?;
+    ctx.db
+        .put(&format!("{}:{}", NODE_KEY_PREFIX, req.node_id), &node_info)?;
     nodes.insert(req.node_id, runtime);
 
     Ok(StatusCode::OK)
@@ -252,13 +306,24 @@ pub async fn heartbeat(
 ) -> Result<StatusCode, ApiError> {
     let mut nodes = match ctx.nodes.write() {
         Ok(nodes) => nodes,
-        Err(e) => return Err(ApiError::Any(anyhow!("failed to acquire nodes lock: {}", e))),
+        Err(e) => {
+            return Err(ApiError::Any(anyhow!(
+                "failed to acquire nodes lock: {}",
+                e
+            )));
+        }
     };
 
-    let entry = nodes.get_mut(&req.node_id).ok_or_else(|| ApiError::UnknownNode)?;
+    let entry = nodes
+        .get_mut(&req.node_id)
+        .ok_or_else(|| ApiError::UnknownNode)?;
 
-    if let Some(u) = req.used_bytes { entry.info.used_bytes = Some(u); }
-    if let Some(c) = req.capacity_bytes { entry.info.capacity_bytes = Some(c); }
+    if let Some(u) = req.used_bytes {
+        entry.info.used_bytes = Some(u);
+    }
+    if let Some(c) = req.capacity_bytes {
+        entry.info.capacity_bytes = Some(c);
+    }
 
     entry.info.last_heartbeat_ms = utc_now_ms();
     entry.info.status = NodeStatus::Alive;
@@ -285,10 +350,10 @@ fn ensure_write_once(ctx: &CoordinatorState, meta_key: &str) -> Result<(), ApiEr
 fn content_length_check(headers: &HeaderMap, max_size: u64) -> Result<(), ApiError> {
     let content_length = parse_content_length(headers);
     if let Some(len) = content_length
-        && len > max_size {
-            return Err(ApiError::TooLarge);
-        }
+        && len > max_size
+    {
+        return Err(ApiError::TooLarge);
+    }
 
     Ok(())
 }
-

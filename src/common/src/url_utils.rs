@@ -14,12 +14,11 @@ pub fn sanitize_url(url: &str) -> anyhow::Result<String> {
     }
 
     // Parse the URL using the url crate for proper validation
-    let parsed_url = Url::parse(url)
-        .map_err(|e| anyhow!("Invalid URL format: {}", e))?;
+    let parsed_url = Url::parse(url).map_err(|e| anyhow!("Invalid URL format: {}", e))?;
 
     // Only allow http and https schemes
     match parsed_url.scheme() {
-        "http" | "https" => {},
+        "http" | "https" => {}
         other => return Err(anyhow!("Unsupported URL scheme: {}", other)),
     }
 
@@ -31,5 +30,7 @@ pub fn sanitize_url(url: &str) -> anyhow::Result<String> {
 }
 
 pub fn node_id_from_url(u: &str) -> String {
-    u.trim_start_matches("http://").trim_start_matches("https://").to_string()
+    u.trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .to_string()
 }

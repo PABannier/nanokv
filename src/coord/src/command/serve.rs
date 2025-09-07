@@ -1,44 +1,36 @@
+use axum::{
+    Router,
+    routing::{get, post, put},
+};
+use axum_server::Server;
+use clap::Parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tokio::sync::watch;
-use axum::{routing::{put, get, post}, Router};
-use axum_server::Server;
 use tracing::info;
-use clap::Parser;
 
 use common::constants::NODE_KEY_PREFIX;
 
+use crate::core::debug::debug_placement;
+use crate::core::health::{node_status_sweeper, startup_cleanup, sweep_tmp_orphans};
 use crate::core::meta::KvDb;
 use crate::core::node::{NodeInfo, NodeRuntime};
-use crate::core::state::CoordinatorState;
-use crate::core::health::{
-    startup_cleanup, 
-    sweep_tmp_orphans, 
-    node_status_sweeper
-};
 use crate::core::routes::{
-    delete_object, 
-    get_object, 
-    put_object, 
-    head_object, 
-    list_nodes, 
-    join_node, 
-    heartbeat
+    delete_object, get_object, head_object, heartbeat, join_node, list_nodes, put_object,
 };
-use crate::core::debug::debug_placement;
-
+use crate::core::state::CoordinatorState;
 
 #[derive(Parser, Debug, Clone)]
 pub struct ServeArgs {
     /// Data root directory; will create subdirs {blos,tmp,gc}
-    #[arg(long, default_value="./data")]
+    #[arg(long, default_value = "./data")]
     data: PathBuf,
 
     /// RocksDB directory (inside data by default)
-    #[arg(long, default_value="./data/index")]
+    #[arg(long, default_value = "./data/index")]
     index: PathBuf,
 
     /// Address to listen on
@@ -82,7 +74,12 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
     let db = KvDb::open(&serve_args.index)?;
 
     // Cleanup before serving
-    startup_cleanup(&serve_args.data, &db, Duration::from_secs(serve_args.pending_grace_secs)).await?;
+    startup_cleanup(
+        &serve_args.data,
+        &db,
+        Duration::from_secs(serve_args.pending_grace_secs),
+    )
+    .await?;
     sweep_tmp_orphans(&serve_args.data, &db).await?;
 
     let nodes = read_node_infos_from_db(&db)?;
@@ -108,7 +105,13 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
     ));
 
     let app = Router::new()
-        .route("/{key}", put(put_object).get(get_object).delete(delete_object).head(head_object))
+        .route(
+            "/{key}",
+            put(put_object)
+                .get(get_object)
+                .delete(delete_object)
+                .head(head_object),
+        )
         .route("/admin/nodes", get(list_nodes))
         .route("/admin/join", post(join_node))
         .route("/admin/heartbeat", post(heartbeat))
@@ -117,8 +120,7 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
         .with_state(state.clone());
 
     info!("listening on {}", serve_args.listen);
-    let server = Server::bind(serve_args.listen.parse()?)
-        .serve(app.into_make_service());
+    let server = Server::bind(serve_args.listen.parse()?).serve(app.into_make_service());
 
     // Graceful shutdown: ctrl+c
     tokio::select! {
@@ -137,12 +139,17 @@ fn read_node_infos_from_db(db: &KvDb) -> anyhow::Result<HashMap<String, NodeRunt
     let mut nodes = HashMap::new();
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(NODE_KEY_PREFIX.as_bytes()) { continue; }
+        if !k.starts_with(NODE_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
         let node_info: NodeInfo = serde_json::from_slice(&v)?;
-        nodes.insert(node_info.node_id.clone(), NodeRuntime {
-            info: node_info,
-            last_seen: Instant::now(),
-        });
+        nodes.insert(
+            node_info.node_id.clone(),
+            NodeRuntime {
+                info: node_info,
+                last_seen: Instant::now(),
+            },
+        );
     }
     Ok(nodes)
 }
