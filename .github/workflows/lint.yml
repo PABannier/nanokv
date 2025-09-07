@@ -1,0 +1,24 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    name: fmt, clippy, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cd src && cargo fmt --all -- --check
+
+      - name: clippy
+        run: cd src && cargo clippy --all-targets -- -D warnings
