@@ -1,0 +1,31 @@
+name: Coverage
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  tarpaulin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install tarpaulin
+        run: cd src && cargo install cargo-tarpaulin
+
+      - name: Run coverage
+        run: cd src && cargo tarpaulin --out Xml --timeout 120 --engine llvm
+
+      - name: Upload coverage reports to Codecov
+        if: ${{ success() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: cobertura.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
