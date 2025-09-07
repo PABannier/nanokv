@@ -97,7 +97,7 @@ pub mod prepare {
         try_join_all(
             replicas
                 .iter()
-                .map(|r| retry_prepare(&http, r, &key, &upload_id))
+                .map(|r| retry_prepare(http, r, key, upload_id))
         ).await.map_err(|e| ApiError::Any(e.into()))?;
 
         Ok(())
@@ -328,11 +328,11 @@ pub mod commit {
             .query(&[("upload_id", upload_id)])
             .query(&[("key", key)]);
 
-        let res = req.send().await.map_err(|e| ApiError::UpstreamReq(e))?;
+        let res = req.send().await.map_err(ApiError::UpstreamReq)?;
         let st = res.status();
 
         if st.is_success() { Ok(()) } else {
-            return Err(ApiError::UpstreamStatus(res.status()));
+            Err(ApiError::UpstreamStatus(res.status()))
         }
     }
 

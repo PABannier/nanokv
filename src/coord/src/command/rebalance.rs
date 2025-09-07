@@ -109,16 +109,16 @@ fn jkey(key_enc: &str, dst: &str) -> String {
 }
 
 fn get_journal(db: &KvDb, mv: &Move) -> Result<Option<MoveState>> {
-    db.get::<MoveState>(&jkey(&mv.key_enc, &mv.dst)).map_err(Into::into)
+    db.get::<MoveState>(&jkey(&mv.key_enc, &mv.dst))
 }
 
 fn set_journal(db: &KvDb, mv: &Move, state: MoveState) -> Result<()> {
-    db.put::<MoveState>(&jkey(&mv.key_enc, &mv.dst), &state).map_err(Into::into)
+    db.put::<MoveState>(&jkey(&mv.key_enc, &mv.dst), &state)
 }
 
 
 pub async fn rebalance(args: RebalanceArgs) -> Result<()> {
-    let db = KvDb::open(&Path::new(&args.index))?;
+    let db = KvDb::open(Path::new(&args.index))?;
 
     let nodes = if let Some(vs) = args.volumes.clone() {
         nodes_from_explicit(&vs)
@@ -164,7 +164,7 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
         if !matches!(meta.state, TxState::Committed) { continue; }
 
         // Desired set (HRW top-N)
-        let desired = choose_top_n_alive(&nodes, &key_enc, cfg.replicas)
+        let desired = choose_top_n_alive(nodes, &key_enc, cfg.replicas)
             .iter().map(|n| n.node_id.clone()).collect::<Vec<String>>();
 
         // Present set (what Meta says we have)
@@ -174,7 +174,7 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
         for dst in desired.iter().filter(|d| !present.contains(*d)) {
             let src = meta.replicas.iter().find(|id| present.contains(*id))
                 .cloned()
-                .or_else(|| meta.replicas.get(0).cloned());
+                .or_else(|| meta.replicas.first().cloned());
             
             if let Some(src) = src {
                 moves.push(Move {
@@ -276,7 +276,7 @@ async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) 
     }
 
     // Final pass: for keys that reached the new destinations, refresh metas order to HRW top-N
-    refresh_metas(&db, nodes, cfg.replicas).await?;
+    refresh_metas(db, nodes, cfg.replicas).await?;
 
     Ok(report)
 }
@@ -297,15 +297,14 @@ async fn refresh_metas(db: &KvDb, nodes: &[NodeInfo], n: usize) -> Result<()> {
         // Probe which nodes *actually* have the blob
         let mut present: Vec<NodeInfo> = Vec::new();
         for id in meta.replicas.iter() {
-            if let Some(n) = by_id.get(id) {
-                if probe_exists(&http, n, &key_enc).await.unwrap_or(false) {
+            if let Some(n) = by_id.get(id)
+                && probe_exists(&http, n, &key_enc).await.unwrap_or(false) {
                     present.push(n.clone());
                 }
-            }
         }
 
         // Keep order by HRW and trim to N
-        let ranked = rank_nodes(&key_enc, &nodes);
+        let ranked = rank_nodes(&key_enc, nodes);
         let mut ordered: Vec<String> = ranked.into_iter()
             .filter(|n| present.iter().any(|p| p.node_id == n.node_id))
             .take(n)

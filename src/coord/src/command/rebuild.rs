@@ -188,11 +188,10 @@ async fn reconcile(
             async move {
                 // If DB has a tombstone, preserve it
                 let meta_key = meta_key_for(&key_enc);
-                if let Ok(Some(existing)) = db.get::<Meta>(&meta_key) {
-                    if existing.state == TxState::Tombstoned {
+                if let Ok(Some(existing)) = db.get::<Meta>(&meta_key)
+                    && existing.state == TxState::Tombstoned {
                         return Ok::<(Outcome, String), anyhow::Error>((Outcome::TombstonePreserved, key_enc));
                     }
-                }
 
                 // Probe volumes: in deep=false mode, stop after first success
                 let mut variants: Vec<Variant> = Vec::new();

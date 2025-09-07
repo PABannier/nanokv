@@ -50,9 +50,7 @@ pub async fn put_object(
     let replicas = {
         let nodes = ctx.nodes
             .read()
-            .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
-            .iter()
-            .map(|(_,n)| n.info.clone())
+            .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?.values().map(|n| n.info.clone())
             .collect::<Vec<_>>();
         choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas)
     };
@@ -207,9 +205,7 @@ pub async fn list_nodes(
 ) -> Result<(StatusCode, impl IntoResponse), ApiError> {
     let nodes = ctx.nodes
         .read()
-        .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
-        .iter()
-        .map(|(_,v)| v.info.clone())
+        .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?.values().map(|v| v.info.clone())
         .collect::<Vec<_>>();
 
     Ok((StatusCode::OK, axum::Json(nodes)))
@@ -277,7 +273,7 @@ pub async fn heartbeat(
 /// Utility functions
 
 fn ensure_write_once(ctx: &CoordinatorState, meta_key: &str) -> Result<(), ApiError> {
-    if let Some(existing) = ctx.db.get::<Meta>(&meta_key)? {
+    if let Some(existing) = ctx.db.get::<Meta>(meta_key)? {
         match existing.state {
             TxState::Committed => return Err(ApiError::KeyAlreadyExists),
             TxState::Pending => return Err(ApiError::KeyAlreadyExists),
@@ -289,12 +285,11 @@ fn ensure_write_once(ctx: &CoordinatorState, meta_key: &str) -> Result<(), ApiEr
 }
 
 fn content_length_check(headers: &HeaderMap, max_size: u64) -> Result<(), ApiError> {
-    let content_length = parse_content_length(&headers);
-    if let Some(len) = content_length {
-        if len > max_size {
+    let content_length = parse_content_length(headers);
+    if let Some(len) = content_length
+        && len > max_size {
             return Err(ApiError::TooLarge);
         }
-    }
 
     Ok(())
 }

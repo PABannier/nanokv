@@ -192,11 +192,9 @@ async fn sweep_tmp_on_all(
         .collect::<Vec<_>>()
         .await;
 
-    for r in tasks {
-        if let Ok((removed, counted)) = r {
-            if counted { report.tmp_swept_volumes += 1; }
-            report.tmp_removed_total += removed;
-        }
+    for (removed, counted) in tasks.into_iter().flatten() {
+        if counted { report.tmp_swept_volumes += 1; }
+        report.tmp_removed_total += removed;
     }
     Ok(())
 }

@@ -160,28 +160,26 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
 
         // Pre-filter: skip dst if it already has valid copy
         for dst_id in need {
-            if let Some(dst) = by_id.get(&dst_id) {
-                if probe_matches(&http, dst, &key_enc, &meta.etag_hex, meta.size)
+            if let Some(dst) = by_id.get(&dst_id)
+                && probe_matches(&http, dst, &key_enc, &meta.etag_hex, meta.size)
                     .await
                     .unwrap_or(false)
                 {
                     // already good on dst; skip
                     continue;
                 }
-            }
 
             // Choose a source that actually has the valid blob
             let mut chosen_src: Option<String> = None;
             for sid in &sources {
-                if let Some(src) = by_id.get(sid) {
-                    if probe_matches(&http, src, &key_enc, &meta.etag_hex, meta.size)
+                if let Some(src) = by_id.get(sid)
+                    && probe_matches(&http, src, &key_enc, &meta.etag_hex, meta.size)
                         .await
                         .unwrap_or(false)
                     {
                         chosen_src = Some(sid.clone());
                         break;
                     }
-                }
             }
             if let Some(src) = chosen_src {
                 if src != dst_id {

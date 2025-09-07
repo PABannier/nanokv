@@ -70,14 +70,14 @@ pub async fn copy_one(
 ) -> Result<()> {
     let upload_id = format!("{}-{}", prefix, Uuid::new_v4());
 
-    retry_prepare(&http, &dst, key_enc, &upload_id).await?;
+    retry_prepare(http, dst, key_enc, &upload_id).await?;
 
-    let r = retry_pull(&http, &src, &dst, &upload_id, size, etag).await?;
+    let r = retry_pull(http, src, dst, &upload_id, size, etag).await?;
     if r.etag != etag || r.size != size {
         bail!("size/checksum mismatch on dst {}", dst.node_id);
     }
 
-    retry_commit(&http, &dst, &upload_id, key_enc).await?;
+    retry_commit(http, dst, &upload_id, key_enc).await?;
 
     Ok(())
 }

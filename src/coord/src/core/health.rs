@@ -54,11 +54,10 @@ pub async fn sweep_tmp_orphans(data_root: &Path, db: &KvDb) -> anyhow::Result<()
         let (k, v) = kv?;
         if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
         let meta: Meta = serde_json::from_slice(&v)?;
-        if matches!(meta.state, TxState::Pending) {
-            if let Some(upload_id) = meta.upload_id {
+        if matches!(meta.state, TxState::Pending)
+            && let Some(upload_id) = meta.upload_id {
                 pending_ids.insert(upload_id);
             }
-        }
     }
 
     let tmp_dir = data_root.join(TMP_DIR_NAME);

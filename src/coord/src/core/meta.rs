@@ -84,18 +84,18 @@ impl Meta {
             etag_hex: String::new(),
             created_ms: utc_now_ms(),
             upload_id: Some(upload_id),
-            replicas: replicas,
+            replicas,
         }
     }
 
     pub fn committed(size: u64, etag_hex: String, replicas: Vec<String>) -> Self {
         Self {
             state: TxState::Committed,
-            size: size,
-            etag_hex: etag_hex,
+            size,
+            etag_hex,
             created_ms: utc_now_ms(),
             upload_id: None,
-            replicas: replicas,
+            replicas,
         }
     }
 
