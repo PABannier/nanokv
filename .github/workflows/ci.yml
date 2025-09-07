@@ -5,8 +5,8 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: fmt, clippy, test
+  lint:
+    name: Lint (fmt, clippy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,3 +22,19 @@ jobs:
 
       - name: clippy
         run: cd src && cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: test
+        env:
+          RUST_BACKTRACE: 1
+        run: cd src && cargo test --all --all-features --locked
+
