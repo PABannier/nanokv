@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, fmt::Display};
 use rocksdb::{Options, DB, ReadOptions, IteratorMode};
 use serde::{de::DeserializeOwned, Serialize, Deserialize};
 
@@ -56,12 +56,12 @@ pub enum TxState {
     Tombstoned   // deleted (logical)
 }
 
-impl ToString for TxState {
-    fn to_string(&self) -> String {
+impl Display for TxState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TxState::Pending => String::from("Pending"),
-            TxState::Committed  => String::from("Committed"),
-            TxState::Tombstoned  => String::from("Tombstoned"),
+            TxState::Pending => write!(f, "Pending"),
+            TxState::Committed  => write!(f, "Committed"),
+            TxState::Tombstoned  => write!(f, "Tombstoned"),
         }
     }
 }
