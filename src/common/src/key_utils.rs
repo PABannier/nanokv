@@ -1,7 +1,6 @@
-use percent_encoding::{self, percent_decode_str, NON_ALPHANUMERIC};
-use crate::error::KeyError;
 use crate::constants::META_KEY_PREFIX;
-
+use crate::error::KeyError;
+use percent_encoding::{self, NON_ALPHANUMERIC, percent_decode_str};
 
 pub fn meta_key_for(user_key_enc: &str) -> String {
     // user_key_enc is the percent-encoded file name
@@ -9,7 +8,10 @@ pub fn meta_key_for(user_key_enc: &str) -> String {
 }
 
 pub fn get_key_enc_from_meta_key(meta_key: &str) -> String {
-    meta_key.strip_prefix(&format!("{}:", META_KEY_PREFIX)).unwrap().to_string()
+    meta_key
+        .strip_prefix(&format!("{}:", META_KEY_PREFIX))
+        .unwrap()
+        .to_string()
 }
 
 const MAX_KEY_LEN: usize = 4096;
@@ -28,7 +30,9 @@ impl Key {
             .or_else(|_| Ok::<Vec<u8>, KeyError>(percent_decode_str(s).collect::<Vec<u8>>()))
             .map_err(|_| KeyError::BadEncoding)?; // will not happen; kept for clarity
 
-        if decoded.is_empty() || decoded.len() > MAX_KEY_LEN { return Err(KeyError::Length); }
+        if decoded.is_empty() || decoded.len() > MAX_KEY_LEN {
+            return Err(KeyError::Length);
+        }
         if decoded.iter().any(|&b| b == 0 || b < 0x20 || b == b'/') {
             return Err(KeyError::Forbidden);
         }
@@ -40,6 +44,10 @@ impl Key {
         Ok(Key { decoded, enc })
     }
 
-    pub fn enc(&self) -> &str { &self.enc }
-    pub fn bytes(&self) -> &[u8] { &self.decoded }
+    pub fn enc(&self) -> &str {
+        &self.enc
+    }
+    pub fn bytes(&self) -> &[u8] {
+        &self.decoded
+    }
 }

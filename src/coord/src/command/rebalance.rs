@@ -18,8 +18,8 @@ use crate::command::common::{copy_one, nodes_from_db, nodes_from_explicit, probe
 use crate::core::meta::{KvDb, Meta, TxState};
 use crate::core::placement::{choose_top_n_alive, rank_nodes};
 
-use common::key_utils::get_key_enc_from_meta_key;
 use common::constants::META_KEY_PREFIX;
+use common::key_utils::get_key_enc_from_meta_key;
 use common::time_utils::utc_now_ms;
 
 use crate::core::node::NodeInfo;

@@ -519,7 +519,7 @@ pub async fn follow_redirect_get(client: &Client, coord_url: &str, key: &str) ->
 
 /// Read metadata directly from RocksDB for testing
 pub fn meta_of(db: &KvDb, key: &str) -> Result<Option<Meta>> {
-    use common::key_utils::{meta_key_for, Key};
+    use common::key_utils::{Key, meta_key_for};
     let key = Key::from_percent_encoded(key).unwrap();
     let key_enc = key.enc();
     let meta_key = meta_key_for(&key_enc);
@@ -528,8 +528,8 @@ pub fn meta_of(db: &KvDb, key: &str) -> Result<Option<Meta>> {
 
 /// Check which volumes have the blob file for a key
 pub fn which_volume_has_file(volumes: &[&TestVolume], key: &str) -> Result<Vec<String>> {
-    use common::file_utils::{blob_path};
-    use common::key_utils::{Key};
+    use common::file_utils::blob_path;
+    use common::key_utils::Key;
 
     let key = Key::from_percent_encoded(key).unwrap();
     let key_enc = key.enc();

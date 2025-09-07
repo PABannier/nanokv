@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::key_utils::{meta_key_for, Key};
+use ::common::key_utils::{Key, meta_key_for};
 use common::*;
 
 use coord::command::repair::{RepairArgs, repair};
@@ -189,7 +189,8 @@ async fn test_repair_skips_tombstoned_metas() -> anyhow::Result<()> {
     // Put and then delete a blob to create tombstone
     let raw_key = "test-key-tombstone-repair";
     let content = b"test content tombstone";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
+    let (status, _, _) =
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
     let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
@@ -225,7 +226,7 @@ async fn test_repair_skips_tombstoned_metas() -> anyhow::Result<()> {
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: None,  // Use registry
+        volumes: None, // Use registry
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
@@ -298,7 +299,7 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: None,  // Use registry
+        volumes: None, // Use registry
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,

@@ -531,7 +531,7 @@ pub async fn admin_sweep_tmp_handler(
 // Helper function to collect blob keys iteratively
 async fn collect_blob_keys(start_dir: &Path, keys: &mut Vec<String>) {
     let mut dirs_to_process = vec![start_dir.to_path_buf()];
-    
+
     while let Some(dir) = dirs_to_process.pop() {
         let mut read_dir = match fs::read_dir(&dir).await {
             Ok(rd) => rd,

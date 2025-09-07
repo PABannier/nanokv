@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::key_utils::{meta_key_for, Key};
+use ::common::key_utils::{Key, meta_key_for};
 use common::*;
 
 use coord::command::verify::{VerifyArgs, verify};

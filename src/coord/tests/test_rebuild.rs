@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::key_utils::{meta_key_for, Key};
+use ::common::key_utils::{Key, meta_key_for};
 use common::*;
 
 use coord::command::rebuild::{RebuildArgs, rebuild};
@@ -85,7 +85,8 @@ async fn test_rebuild_preserves_tombstones() -> anyhow::Result<()> {
     // Put and then delete a blob to create tombstone
     let raw_key = "test-key-tombstone";
     let content = b"test content";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
+    let (status, _, _) =
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
     let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
@@ -148,7 +149,8 @@ async fn test_rebuild_dry_run() -> anyhow::Result<()> {
     // Put a blob and then clear meta
     let raw_key = "test-key-dry-run";
     let content = b"test content";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
+    let (status, _, _) =
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
     let key = Key::from_percent_encoded(raw_key).unwrap();

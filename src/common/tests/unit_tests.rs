@@ -1,5 +1,5 @@
 use common::file_utils::{blob_path, tmp_path};
-use common::key_utils::{meta_key_for, Key};
+use common::key_utils::{Key, meta_key_for};
 use std::path::Path;
 
 #[test]
