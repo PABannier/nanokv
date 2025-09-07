@@ -13,7 +13,6 @@ use axum::{
     Router,
 };
 use axum_server::Server;
-use blake3;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
@@ -22,7 +21,6 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
-use tracing_subscriber;
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 
 use common::schemas::{BlobHead, ListResponse, SweepTmpResponse};

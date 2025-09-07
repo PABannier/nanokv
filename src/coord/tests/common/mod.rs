@@ -133,11 +133,11 @@ impl TestCoordinator {
     }
 
     pub async fn shutdown(self) -> Result<()> {
-        let _ = self.server.shutdown_tx.send(true);
-        let _ = self.sweeper_handle.abort();
+        self.server.shutdown_tx.send(true);
+        self.sweeper_handle.abort();
         self.server.handle.abort();
-        let _ = self.server.handle.await;
-        let _ = self.sweeper_handle.await;
+        self.server.handle.await;
+        self.sweeper_handle.await;
         Ok(())
     }
 

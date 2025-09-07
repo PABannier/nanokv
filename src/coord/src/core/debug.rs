@@ -30,8 +30,8 @@ pub async fn debug_placement(
     // Get the replicas in HRW order (same logic as PUT)
     let nodes = ctx.nodes.read()
         .map_err(|e| ApiError::Any(anyhow!("failed to acquire nodes read lock: {}", e)))?
-        .iter()
-        .map(|(_,n)| n.info.clone())
+        .values()
+        .map(|v| v.info.clone())
         .collect::<Vec<_>>();
     let replicas = choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas);
     
