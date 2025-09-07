@@ -250,6 +250,7 @@ async fn clean_tombstones(
 }
 
 
+#[allow(clippy::too_many_arguments)]
 async fn delete_on(
     http: &Client,
     volumes: &HashMap<String, Url>,
