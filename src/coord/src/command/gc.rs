@@ -1,4 +1,4 @@
-use anyhow::{Result, Context, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use futures::stream::{self, StreamExt};
 use humantime;
@@ -89,7 +89,7 @@ pub struct GcReport {
     pub probe_errors: usize,
     pub sample_tombstones: Vec<String>,
     pub sample_orphans: Vec<String>,
-    pub sample_extras: Vec<(String/*key*/, String/*node*/)>
+    pub sample_extras: Vec<(String /*key*/, String /*node*/)>,
 }
 
 impl Display for GcReport {
@@ -124,11 +124,19 @@ pub async fn gc(args: GcArgs) -> Result<()> {
     } else {
         nodes_from_db(&db, true /* include suspect */)?
     };
-    if nodes.is_empty() { bail!("gc: no volumes available"); }
+    if nodes.is_empty() {
+        bail!("gc: no volumes available");
+    }
 
     // Map node_id -> Url
-    let volumes: HashMap<String, Url> = nodes.iter()
-        .map(|n| (n.node_id.clone(), Url::parse(&n.internal_url).expect("valid url")))
+    let volumes: HashMap<String, Url> = nodes
+        .iter()
+        .map(|n| {
+            (
+                n.node_id.clone(),
+                Url::parse(&n.internal_url).expect("valid url"),
+            )
+        })
         .collect();
 
     let mut report = GcReport::default();
@@ -139,13 +147,35 @@ pub async fn gc(args: GcArgs) -> Result<()> {
     // Semaphores
     let global = Arc::new(Semaphore::new(args.concurrency));
     let per_node: Arc<HashMap<String, Arc<Semaphore>>> = Arc::new(
-        volumes.keys()
+        volumes
+            .keys()
             .map(|id| (id.clone(), Arc::new(Semaphore::new(args.per_node))))
-            .collect()
+            .collect(),
     );
 
-    sweep_tmp_on_all(&http, &volumes, sweep_tmp_age, timeout, &args, &global, &per_node, &mut report).await?;
-    clean_tombstones(&http, &db, &volumes, tombstone_ttl, timeout, &args, &global, &per_node, &mut report).await?;
+    sweep_tmp_on_all(
+        &http,
+        &volumes,
+        sweep_tmp_age,
+        timeout,
+        &args,
+        &global,
+        &per_node,
+        &mut report,
+    )
+    .await?;
+    clean_tombstones(
+        &http,
+        &db,
+        &volumes,
+        tombstone_ttl,
+        timeout,
+        &args,
+        &global,
+        &per_node,
+        &mut report,
+    )
+    .await?;
     if args.delete_extraneous || args.purge_orphans {
         clean_extraneous_and_orphans(&http, &db, &volumes, timeout, &args, &mut report).await?;
     }
@@ -154,7 +184,7 @@ pub async fn gc(args: GcArgs) -> Result<()> {
     Ok(())
 }
 
-
+#[allow(clippy::too_many_arguments)]
 async fn sweep_tmp_on_all(
     http: &Client,
     volumes: &HashMap<String, Url>,
@@ -176,14 +206,17 @@ async fn sweep_tmp_on_all(
             let global = Arc::clone(global);
             let per = Arc::clone(per_node);
             let dry = args.dry_run;
-            let timeout = timeout;
 
             async move {
                 let _g = global.acquire_owned().await?;
                 let _p = per.get(&id).unwrap().clone().acquire_owned().await?;
-                if dry { return Ok::<(u64,bool), anyhow::Error>((0, false)); }
+                if dry {
+                    return Ok::<(u64, bool), anyhow::Error>((0, false));
+                }
                 let r = http.post(url).timeout(timeout).send().await?;
-                if !r.status().is_success() { return Ok((0,false)); }
+                if !r.status().is_success() {
+                    return Ok((0, false));
+                }
                 let resp: SweepTmpResponse = r.json().await?;
                 Ok((resp.removed, true))
             }
@@ -192,16 +225,16 @@ async fn sweep_tmp_on_all(
         .collect::<Vec<_>>()
         .await;
 
-    for r in tasks {
-        if let Ok((removed, counted)) = r {
-            if counted { report.tmp_swept_volumes += 1; }
-            report.tmp_removed_total += removed;
+    for (removed, counted) in tasks.into_iter().flatten() {
+        if counted {
+            report.tmp_swept_volumes += 1;
         }
+        report.tmp_removed_total += removed;
     }
     Ok(())
 }
 
-
+#[allow(clippy::too_many_arguments)]
 async fn clean_tombstones(
     http: &Client,
     db: &KvDb,
@@ -218,31 +251,54 @@ async fn clean_tombstones(
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
         let meta: Meta = serde_json::from_slice(&v)?;
-        if meta.state != TxState::Tombstoned { continue; }
+        if meta.state != TxState::Tombstoned {
+            continue;
+        }
 
         report.tombstones_scanned += 1;
-        if now_ms - meta.created_ms < ttl_ms { continue; }
+        if now_ms - meta.created_ms < ttl_ms {
+            continue;
+        }
         report.tombstones_past_ttl += 1;
-        if report.sample_tombstones.len() < 10 { report.sample_tombstones.push(key_enc.clone()); }
+        if report.sample_tombstones.len() < 10 {
+            report.sample_tombstones.push(key_enc.clone());
+        }
 
         // Decide delete targets
         let targets: Vec<&String> = if args.broadcast_deletes {
             volumes.keys().collect()
         } else {
             // Only meta.replicas by default
-            meta.replicas.iter().filter(|id| volumes.contains_key(*id)).collect()
+            meta.replicas
+                .iter()
+                .filter(|id| volumes.contains_key(*id))
+                .collect()
         };
 
         // Fan out deletes with per-node/global caps
         let sent = delete_on(
-            http, volumes, &targets, &key_enc, timeout, args.dry_run, global, per_node
-        ).await?;
+            http,
+            volumes,
+            &targets,
+            &key_enc,
+            timeout,
+            args.dry_run,
+            global,
+            per_node,
+        )
+        .await?;
         report.tombstone_deletes_sent += sent;
 
-        if args.purge_tombstone_meta && (args.force_purge || sent == targets.len()) && !args.dry_run {
+        if args.purge_tombstone_meta && (args.force_purge || sent == targets.len()) && !args.dry_run
+        {
             db.delete(&format!("{}{}", META_KEY_PREFIX, key_enc))?;
             report.tombstone_metas_purged += 1;
         }
@@ -250,7 +306,7 @@ async fn clean_tombstones(
     Ok(())
 }
 
-
+#[allow(clippy::too_many_arguments)]
 async fn delete_on(
     http: &Client,
     volumes: &HashMap<String, Url>,
@@ -274,12 +330,20 @@ async fn delete_on(
             async move {
                 let _g = global.acquire_owned().await?;
                 let _p = per.get(&id).unwrap().clone().acquire_owned().await?;
-                if dry_run { return Ok::<bool, anyhow::Error>(true); }
+                if dry_run {
+                    return Ok::<bool, anyhow::Error>(true);
+                }
                 let r = http.post(url).timeout(timeout).send().await;
                 match r {
                     Ok(resp) if resp.status().is_success() => Ok(true),
-                    Ok(resp) => { warn!(status=%resp.status(), node=%id, key=%key_enc, "delete non-success"); Ok(false) }
-                    Err(e) => { warn!(%e, node=%id, key=%key_enc, "delete error"); Ok(false) }
+                    Ok(resp) => {
+                        warn!(status=%resp.status(), node=%id, key=%key_enc, "delete non-success");
+                        Ok(false)
+                    }
+                    Err(e) => {
+                        warn!(%e, node=%id, key=%key_enc, "delete error");
+                        Ok(false)
+                    }
                 }
             }
         })
@@ -287,9 +351,12 @@ async fn delete_on(
         .collect::<Vec<_>>()
         .await;
 
-    Ok(results.into_iter().filter_map(|r| r.ok()).filter(|&ok| ok).count())
+    Ok(results
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .filter(|&ok| ok)
+        .count())
 }
-
 
 async fn clean_extraneous_and_orphans(
     http: &Client,
@@ -303,8 +370,13 @@ async fn clean_extraneous_and_orphans(
     let mut expected: HashMap<String, HashSet<String>> = HashMap::new();
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
         let meta: Meta = serde_json::from_slice(&v)?;
         if meta.state == TxState::Committed {
             expected.insert(key_enc, meta.replicas.into_iter().collect());
@@ -319,16 +391,28 @@ async fn clean_extraneous_and_orphans(
             {
                 let mut qp = url.query_pairs_mut();
                 qp.append_pair("limit", "1000");
-                if let Some(a) = &after { qp.append_pair("after", a); }
+                if let Some(a) = &after {
+                    qp.append_pair("after", a);
+                }
             }
 
             let r = http.get(url.clone()).timeout(timeout).send().await;
             let resp = match r {
                 Ok(resp) if resp.status().is_success() => resp,
-                Ok(resp) => { warn!(status=%resp.status(), node=%node_id, "list non-success"); break; }
-                Err(e) => { warn!(%e, node=%node_id, "list error"); report.probe_errors += 1; break; }
+                Ok(resp) => {
+                    warn!(status=%resp.status(), node=%node_id, "list non-success");
+                    break;
+                }
+                Err(e) => {
+                    warn!(%e, node=%node_id, "list error");
+                    report.probe_errors += 1;
+                    break;
+                }
             };
-            let page: ListResponse = resp.json().await.with_context(|| format!("decode list page {}", url))?;
+            let page: ListResponse = resp
+                .json()
+                .await
+                .with_context(|| format!("decode list page {}", url))?;
             report.list_pages_scanned += 1;
 
             for key_enc in page.keys {
@@ -337,7 +421,9 @@ async fn clean_extraneous_and_orphans(
                         if !repls.contains(node_id) {
                             report.extraneous_found += 1;
                             if report.sample_extras.len() < 10 {
-                                report.sample_extras.push((key_enc.clone(), node_id.clone()));
+                                report
+                                    .sample_extras
+                                    .push((key_enc.clone(), node_id.clone()));
                             }
                             if args.delete_extraneous && !args.dry_run {
                                 let mut del = base.clone();
@@ -365,7 +451,9 @@ async fn clean_extraneous_and_orphans(
             }
 
             after = page.next_after;
-            if after.is_none() { break; }
+            if after.is_none() {
+                break;
+            }
         }
     }
     Ok(())

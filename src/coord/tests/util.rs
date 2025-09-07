@@ -6,14 +6,14 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, bail};
 use axum::{
+    Router,
     extract::{Query, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
-    Router,
 };
 use axum_server::Server;
-use blake3;
+use percent_encoding::{NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
@@ -21,17 +21,15 @@ use tokio::fs;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, Duration};
-use tracing_subscriber;
-use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
+use tokio::time::{Duration, sleep};
 
-use common::schemas::{BlobHead, ListResponse, SweepTmpResponse};
 use common::api_error::ApiError;
+use common::file_utils::meta_key_for;
+use common::schemas::{BlobHead, ListResponse, SweepTmpResponse};
+use common::time_utils::utc_now_ms;
+use common::url_utils::node_id_from_url;
 use coord::core::meta::{KvDb, Meta};
 use coord::core::node::NodeInfo;
-use common::file_utils::meta_key_for;
-use common::url_utils::node_id_from_url;
-use common::time_utils::utc_now_ms;
 
 /// Initialize tracing for tests
 pub fn init_tracing() {
@@ -78,16 +76,16 @@ pub fn make_key(content: &[u8]) -> (String, u64, String) {
 pub async fn write_blob(volume_root: &Path, key_enc: &str, content: &[u8]) -> Result<()> {
     let decoded = percent_decode_str(key_enc).decode_utf8()?;
     let key = decoded.as_ref();
-    
+
     // Create sharded path: blobs/aa/bb/key
     let hash = blake3::hash(key.as_bytes());
     let hex = hash.to_hex();
     let aa = &hex.as_str()[0..2];
     let bb = &hex.as_str()[2..4];
-    
+
     let blob_dir = volume_root.join("blobs").join(aa).join(bb);
     fs::create_dir_all(&blob_dir).await?;
-    
+
     let blob_path = blob_dir.join(key);
     fs::write(blob_path, content).await?;
     Ok(())
@@ -97,12 +95,12 @@ pub async fn write_blob(volume_root: &Path, key_enc: &str, content: &[u8]) -> Re
 pub async fn read_blob(volume_root: &Path, key_enc: &str) -> Result<Vec<u8>> {
     let decoded = percent_decode_str(key_enc).decode_utf8()?;
     let key = decoded.as_ref();
-    
+
     let hash = blake3::hash(key.as_bytes());
     let hex = hash.to_hex();
     let aa = &hex.as_str()[0..2];
     let bb = &hex.as_str()[2..4];
-    
+
     let blob_path = volume_root.join("blobs").join(aa).join(bb).join(key);
     let content = fs::read(blob_path).await?;
     Ok(content)
@@ -151,7 +149,7 @@ pub struct FakeVolumeState {
     pub node_id: String,
     pub options: Arc<Mutex<VolumeOptions>>,
     pub temp_uploads: Arc<Mutex<HashMap<String, (u64, Vec<u8>)>>>, // upload_id -> (expected_size, content)
-    pub call_counts: Arc<Mutex<HashMap<String, usize>>>, // endpoint -> count
+    pub call_counts: Arc<Mutex<HashMap<String, usize>>>,           // endpoint -> count
 }
 
 impl FakeVolumeState {
@@ -164,12 +162,12 @@ impl FakeVolumeState {
             call_counts: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-    
+
     fn increment_call_count(&self, endpoint: &str) {
         let mut counts = self.call_counts.lock().unwrap();
         *counts.entry(endpoint.to_string()).or_insert(0) += 1;
     }
-    
+
     pub fn get_call_count(&self, endpoint: &str) -> usize {
         let counts = self.call_counts.lock().unwrap();
         counts.get(endpoint).copied().unwrap_or(0)
@@ -232,7 +230,7 @@ pub async fn admin_list_handler(
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse>, ApiError> {
     state.increment_call_count("admin_list");
-    
+
     // Check fault injection
     let should_fail = {
         let mut opts = state.options.lock().unwrap();
@@ -243,50 +241,55 @@ pub async fn admin_list_handler(
             false
         }
     };
-    
+
     if should_fail {
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: admin_list failed")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: admin_list failed"
+        )));
     }
-    
+
     let latency_ms = {
         let opts = state.options.lock().unwrap();
         opts.inject_latency_ms
     };
-    
+
     if let Some(ms) = latency_ms {
         sleep(Duration::from_millis(ms)).await;
     }
-    
+
     let limit = {
         let opts = state.options.lock().unwrap();
         opts.pagination_limit.unwrap_or(query.limit.unwrap_or(1000))
     };
-    
+
     // Walk the blobs directory and collect keys
     let mut keys = Vec::new();
     let blobs_dir = state.volume_root.join("blobs");
-    
+
     if blobs_dir.exists() {
         let mut entries = Vec::new();
         collect_blob_keys(&blobs_dir, &mut entries).await;
         entries.sort();
-        
+
         // Apply pagination
         let start_idx = match &query.after {
-            Some(after) => entries.iter().position(|k| k > after).unwrap_or(entries.len()),
+            Some(after) => entries
+                .iter()
+                .position(|k| k > after)
+                .unwrap_or(entries.len()),
             None => 0,
         };
-        
+
         let end_idx = (start_idx + limit).min(entries.len());
         keys = entries[start_idx..end_idx].to_vec();
     }
-    
+
     let next_after = if keys.len() == limit && keys.len() > 0 {
         Some(keys.last().unwrap().clone())
     } else {
         None
     };
-    
+
     Ok(Json(ListResponse { keys, next_after }))
 }
 
@@ -295,7 +298,7 @@ pub async fn admin_blob_handler(
     Query(query): Query<AdminBlobQuery>,
 ) -> Result<Json<BlobHead>, ApiError> {
     state.increment_call_count("admin_blob");
-    
+
     // Check fault injection
     let should_fail = {
         let mut opts = state.options.lock().unwrap();
@@ -306,22 +309,24 @@ pub async fn admin_blob_handler(
             false
         }
     };
-    
+
     if should_fail {
-        return Err(ApiError::Any(anyhow::anyhow!("Fault injection: admin_blob failed")));
+        return Err(ApiError::Any(anyhow::anyhow!(
+            "Fault injection: admin_blob failed"
+        )));
     }
-    
+
     let latency_ms = {
         let opts = state.options.lock().unwrap();
         opts.inject_latency_ms
     };
-    
+
     if let Some(ms) = latency_ms {
         sleep(Duration::from_millis(ms)).await;
     }
-    
+
     let deep = query.deep.as_deref() == Some("true");
-    
+
     match read_blob(&state.volume_root, &query.key).await {
         Ok(content) => {
             let mut size = content.len() as u64;
@@ -330,7 +335,7 @@ pub async fn admin_blob_handler(
             } else {
                 None
             };
-            
+
             // Apply corruption for testing
             {
                 let opts = state.options.lock().unwrap();
@@ -345,10 +350,18 @@ pub async fn admin_blob_handler(
                     }
                 }
             }
-            
-            Ok(Json(BlobHead { exists: true, size, etag }))
+
+            Ok(Json(BlobHead {
+                exists: true,
+                size,
+                etag,
+            }))
         }
-        Err(_) => Ok(Json(BlobHead { exists: false, size: 0, etag: None }))
+        Err(_) => Ok(Json(BlobHead {
+            exists: false,
+            size: 0,
+            etag: None,
+        })),
     }
 }
 
@@ -357,20 +370,25 @@ pub async fn internal_prepare_handler(
     Query(query): Query<InternalPrepareQuery>,
 ) -> Result<StatusCode, ApiError> {
     state.increment_call_count("internal_prepare");
-    
+
     // Check fault injection
     {
         let mut opts = state.options.lock().unwrap();
         if opts.fail_internal_prepare_once {
             opts.fail_internal_prepare_once = false;
-            return Err(ApiError::Any(anyhow::anyhow!("Fault injection: prepare failed")));
+            return Err(ApiError::Any(anyhow::anyhow!(
+                "Fault injection: prepare failed"
+            )));
         }
     }
-    
+
     // Store the upload preparation
     let mut uploads = state.temp_uploads.lock().unwrap();
-    uploads.insert(query.upload_id, (query.expected_size.unwrap_or(0), Vec::new()));
-    
+    uploads.insert(
+        query.upload_id,
+        (query.expected_size.unwrap_or(0), Vec::new()),
+    );
+
     Ok(StatusCode::OK)
 }
 
@@ -379,16 +397,18 @@ pub async fn internal_pull_handler(
     Query(query): Query<InternalPullQuery>,
 ) -> Result<Json<PullResponse>, ApiError> {
     state.increment_call_count("internal_pull");
-    
+
     // Check fault injection
     {
         let mut opts = state.options.lock().unwrap();
         if opts.fail_internal_pull_once {
             opts.fail_internal_pull_once = false;
-            return Err(ApiError::Any(anyhow::anyhow!("Fault injection: pull failed")));
+            return Err(ApiError::Any(anyhow::anyhow!(
+                "Fault injection: pull failed"
+            )));
         }
     }
-    
+
     // For testing, we'll simulate pulling by either:
     // 1. Fetching from the "from" URL if it's a real URL
     // 2. Using injected content if "from" starts with "inject:"
@@ -399,16 +419,20 @@ pub async fn internal_pull_handler(
     } else {
         // Try to fetch from the source URL
         let client = Client::new();
-        let resp = client.get(&query.from).send().await
+        let resp = client
+            .get(&query.from)
+            .send()
+            .await
             .map_err(|_| ApiError::Any(anyhow::anyhow!("Failed to fetch from source")))?;
-        resp.bytes().await
+        resp.bytes()
+            .await
             .map_err(|_| ApiError::Any(anyhow::anyhow!("Failed to read response")))?
             .to_vec()
     };
-    
+
     let size = content.len() as u64;
     let etag = blake3::hash(&content).to_hex().to_string();
-    
+
     // Store the content for commit
     {
         let mut uploads = state.temp_uploads.lock().unwrap();
@@ -421,7 +445,7 @@ pub async fn internal_pull_handler(
             return Err(ApiError::Any(anyhow::anyhow!("Upload not prepared")));
         }
     }
-    
+
     Ok(Json(PullResponse { size, etag }))
 }
 
@@ -430,16 +454,18 @@ pub async fn internal_commit_handler(
     Query(query): Query<InternalCommitQuery>,
 ) -> Result<StatusCode, ApiError> {
     state.increment_call_count("internal_commit");
-    
+
     // Check fault injection
     {
         let mut opts = state.options.lock().unwrap();
         if opts.fail_internal_commit_once {
             opts.fail_internal_commit_once = false;
-            return Err(ApiError::Any(anyhow::anyhow!("Fault injection: commit failed")));
+            return Err(ApiError::Any(anyhow::anyhow!(
+                "Fault injection: commit failed"
+            )));
         }
     }
-    
+
     // Move temp upload to final blob
     let content = {
         let mut uploads = state.temp_uploads.lock().unwrap();
@@ -448,10 +474,11 @@ pub async fn internal_commit_handler(
             None => return Err(ApiError::Any(anyhow::anyhow!("Upload not found"))),
         }
     };
-    
-    write_blob(&state.volume_root, &query.key, &content).await
+
+    write_blob(&state.volume_root, &query.key, &content)
+        .await
         .map_err(|_| ApiError::Any(anyhow::anyhow!("Failed to write blob")))?;
-    
+
     Ok(StatusCode::OK)
 }
 
@@ -460,29 +487,32 @@ pub async fn internal_delete_handler(
     Query(query): Query<InternalDeleteQuery>,
 ) -> Result<StatusCode, ApiError> {
     state.increment_call_count("internal_delete");
-    
+
     // Check fault injection
     {
         let mut opts = state.options.lock().unwrap();
         if opts.fail_internal_delete_once {
             opts.fail_internal_delete_once = false;
-            return Err(ApiError::Any(anyhow::anyhow!("Fault injection: delete failed")));
+            return Err(ApiError::Any(anyhow::anyhow!(
+                "Fault injection: delete failed"
+            )));
         }
     }
-    
+
     // Delete the blob if it exists (idempotent)
-    let decoded = percent_decode_str(&query.key).decode_utf8()
+    let decoded = percent_decode_str(&query.key)
+        .decode_utf8()
         .map_err(|_| ApiError::Any(anyhow::anyhow!("Invalid key encoding")))?;
     let key = decoded.as_ref();
-    
+
     let hash = blake3::hash(key.as_bytes());
     let hex = hash.to_hex();
     let aa = &hex.as_str()[0..2];
     let bb = &hex.as_str()[2..4];
-    
+
     let blob_path = state.volume_root.join("blobs").join(aa).join(bb).join(key);
     let _ = fs::remove_file(blob_path).await; // Ignore errors (idempotent)
-    
+
     Ok(StatusCode::OK)
 }
 
@@ -490,19 +520,25 @@ pub async fn admin_sweep_tmp_handler(
     State(state): State<FakeVolumeState>,
 ) -> Result<Json<SweepTmpResponse>, ApiError> {
     state.increment_call_count("admin_sweep_tmp");
-    
+
     // For testing, just return a fixed response
-    Ok(Json(SweepTmpResponse { removed: 0, kept_recent: 0 }))
+    Ok(Json(SweepTmpResponse {
+        removed: 0,
+        kept_recent: 0,
+    }))
 }
 
 // Helper function to recursively collect blob keys
-fn collect_blob_keys<'a>(dir: &'a Path, keys: &'a mut Vec<String>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+fn collect_blob_keys<'a>(
+    dir: &'a Path,
+    keys: &'a mut Vec<String>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
     Box::pin(async move {
         let mut read_dir = match fs::read_dir(dir).await {
             Ok(rd) => rd,
             Err(_) => return,
         };
-        
+
         while let Ok(Some(entry)) = read_dir.next_entry().await {
             let path = entry.path();
             if path.is_dir() {
@@ -544,23 +580,23 @@ pub async fn spawn_volume(
 ) -> Result<FakeVolumeHandle> {
     let temp_dir = TempDir::new()?;
     let volume_root = temp_dir.path().to_path_buf();
-    
+
     // Create directory structure
     fs::create_dir_all(volume_root.join("blobs")).await?;
     fs::create_dir_all(volume_root.join("tmp")).await?;
-    
+
     // Write initial blobs
     for (key_enc, content) in initial_blobs {
         write_blob(&volume_root, &key_enc, &content).await?;
     }
-    
+
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     let base_url = format!("http://{}", addr);
     let node_id = node_id_from_url(&base_url);
-    
+
     let state = FakeVolumeState::new(volume_root, node_id.clone(), options);
-    
+
     let app = Router::new()
         .route("/admin/list", get(admin_list_handler))
         .route("/admin/blob", get(admin_blob_handler))
@@ -570,22 +606,21 @@ pub async fn spawn_volume(
         .route("/internal/commit", post(internal_commit_handler))
         .route("/internal/delete", post(internal_delete_handler))
         .with_state(state.clone());
-    
+
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    
+
     let handle = tokio::spawn(async move {
-        let server = Server::from_tcp(listener.into_std()?)
-            .serve(app.into_make_service());
-        
+        let server = Server::from_tcp(listener.into_std()?).serve(app.into_make_service());
+
         tokio::select! {
             res = server => res.map_err(anyhow::Error::from),
             _ = shutdown_rx.changed() => Ok(()),
         }
     });
-    
+
     // Leak the temp_dir so it persists for the lifetime of the server
     std::mem::forget(temp_dir);
-    
+
     Ok(FakeVolumeHandle {
         base_url: base_url.clone(),
         internal_url: base_url,
@@ -599,17 +634,17 @@ pub async fn spawn_volume(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_fake_volume_basic() -> Result<()> {
         init_tracing();
-        
+
         let (key_enc, _, _) = make_key(b"test content");
         let initial_blobs = vec![(key_enc.clone(), b"test content".to_vec())];
-        
+
         let volume = spawn_volume(initial_blobs, VolumeOptions::default()).await?;
         let client = Client::new();
-        
+
         // Test /admin/list
         let url = format!("{}/admin/list", volume.base_url);
         let resp = client.get(&url).send().await?;
@@ -617,7 +652,7 @@ mod tests {
         let list: ListResponse = resp.json().await?;
         assert_eq!(list.keys.len(), 1);
         assert_eq!(list.keys[0], key_enc);
-        
+
         // Test /admin/blob
         let url = format!("{}/admin/blob?key={}&deep=true", volume.base_url, key_enc);
         let resp = client.get(&url).send().await?;
@@ -626,7 +661,7 @@ mod tests {
         assert!(blob.exists);
         assert_eq!(blob.size, 12);
         assert!(blob.etag.is_some());
-        
+
         volume.shutdown().await?;
         Ok(())
     }

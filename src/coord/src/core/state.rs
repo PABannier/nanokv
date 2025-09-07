@@ -1,7 +1,7 @@
+use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::sync::Semaphore;
-use reqwest::Client;
 
 use crate::core::meta::KvDb;
 use crate::core::node::NodeRuntime;

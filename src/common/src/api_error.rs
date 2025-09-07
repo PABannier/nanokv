@@ -1,9 +1,9 @@
-use std::io;
-use reqwest;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use reqwest;
+use std::io;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ApiError {

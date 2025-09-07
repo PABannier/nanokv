@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use std::path::PathBuf;
 use reqwest::Client;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::fault_injection::FaultInjector;
 

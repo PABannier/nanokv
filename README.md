@@ -1,6 +1,7 @@
 # nanokv
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Coverage](https://img.shields.io/codecov/c/github/PABannier/nanokv)
 
 A simple, production-minded distributed object store optimized for values between 1 MB and 1 GB. Think “S3-like blobs with a KV API,” built to be understandable, hackable, and safe by default.
 

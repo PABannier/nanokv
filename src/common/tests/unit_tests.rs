@@ -1,4 +1,4 @@
-use common::file_utils::{sanitize_key, blob_path, tmp_path, meta_key_for};
+use common::file_utils::{blob_path, meta_key_for, sanitize_key, tmp_path};
 use std::path::Path;
 
 #[test]
@@ -41,7 +41,8 @@ fn test_shard_dirs_stability() {
 
     // Test the structure is as expected (data/blobs/xx/yy/key)
     let expected_components = vec!["data", "blobs"];
-    let components: Vec<_> = path1.components()
+    let components: Vec<_> = path1
+        .components()
         .map(|c| c.as_os_str().to_str().unwrap())
         .skip_while(|&c| c == "/") // Skip root component on Unix
         .take(2)
@@ -51,7 +52,13 @@ fn test_shard_dirs_stability() {
     // Verify the shard directories are 2-char hex
     let parent = path1.parent().unwrap();
     let shard2 = parent.file_name().unwrap().to_str().unwrap();
-    let shard1 = parent.parent().unwrap().file_name().unwrap().to_str().unwrap();
+    let shard1 = parent
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
 
     assert_eq!(shard1.len(), 2);
     assert_eq!(shard2.len(), 2);

@@ -1,4 +1,5 @@
 /dist
 /target
+src/target
 data/
 .DS_Store

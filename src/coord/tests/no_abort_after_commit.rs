@@ -20,22 +20,29 @@ async fn test_no_abort_after_any_commit() -> anyhow::Result<()> {
     let expected_replicas = test_placement_n(key, &nodes, 3);
     assert_eq!(expected_replicas.len(), 3, "Should have 3 replicas");
 
-    println!("Expected replicas for key '{}': {:?}", key, expected_replicas);
+    println!(
+        "Expected replicas for key '{}': {:?}",
+        key, expected_replicas
+    );
 
-    // Set up scenario: let write pass through to just before commit, 
+    // Set up scenario: let write pass through to just before commit,
     // then inject failure in commit on F1 once, but ensure commit eventually succeeds on retry
     let follower_node = &expected_replicas[1]; // F1 = second replica
-    let follower_volume = volumes.iter()
+    let follower_volume = volumes
+        .iter()
         .find(|v| v.state.node_id == *follower_node)
         .expect("Should find follower volume");
 
     // Inject one-time commit failure that will be retried and succeed
     let fail_url = format!("{}/admin/fail/commit?once=true", follower_volume.url());
     let fail_resp = client.post(&fail_url).send().await;
-    
+
     if let Ok(resp) = fail_resp {
         if resp.status().is_success() {
-            println!("Injected one-time commit failure on follower: {}", follower_node);
+            println!(
+                "Injected one-time commit failure on follower: {}",
+                follower_node
+            );
         } else {
             println!("Warning: Could not inject commit failure");
         }
@@ -50,12 +57,17 @@ async fn test_no_abort_after_any_commit() -> anyhow::Result<()> {
     println!("Starting PUT that should trigger commit retry without abort");
 
     let start_time = std::time::Instant::now();
-    let (status, etag, len) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
+    let (status, etag, len) =
+        put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
     let elapsed = start_time.elapsed();
 
     // Assert: After any single replica commits, no abort calls are sent
     // The PUT should eventually succeed
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed after commit retry");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed after commit retry"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
     assert_eq!(len, payload.len() as u64, "Length should match");
 
@@ -69,7 +81,11 @@ async fn test_no_abort_after_any_commit() -> anyhow::Result<()> {
     // Verify all replicas have the file (no abort was called)
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All 3 volumes should have the file (no abort)");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All 3 volumes should have the file (no abort)"
+    );
 
     // Verify data integrity
     let redirect_client = create_redirect_client()?;
@@ -118,7 +134,11 @@ async fn test_commit_wins_rule_multiple_retries() -> anyhow::Result<()> {
     let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
 
     // Should eventually succeed
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed after multiple commit retries");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed after multiple commit retries"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     // Verify final committed state
@@ -128,7 +148,11 @@ async fn test_commit_wins_rule_multiple_retries() -> anyhow::Result<()> {
     // All replicas should have the file (no abort during commit phase)
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     println!("Commit-wins rule with multiple retries test successful");
 
@@ -155,7 +179,8 @@ async fn test_no_abort_after_head_commits() -> anyhow::Result<()> {
 
     // Let head commit succeed, but make followers fail initially
     // This tests that once head commits, the guard is disarmed
-    for replica_node in &expected_replicas[1..] { // Inject on followers only
+    for replica_node in &expected_replicas[1..] {
+        // Inject on followers only
         if let Some(volume) = volumes.iter().find(|v| v.state.node_id == *replica_node) {
             let fail_url = format!("{}/admin/fail/commit?once=true", volume.url());
             let _ = client.post(&fail_url).send().await;
@@ -163,7 +188,7 @@ async fn test_no_abort_after_head_commits() -> anyhow::Result<()> {
         }
     }
 
-    let payload = generate_random_bytes(1 * 1024 * 1024); // 1 MiB
+    let payload = generate_random_bytes(1024 * 1024); // 1 MiB
     let expected_etag = blake3_hex(&payload);
 
     println!("Starting PUT where head commits but followers initially fail");
@@ -171,13 +196,21 @@ async fn test_no_abort_after_head_commits() -> anyhow::Result<()> {
     let (status, etag, _) = put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
 
     // Should succeed after retries (no abort once head commits)
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed - no abort after head commits");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed - no abort after head commits"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     // Verify all replicas eventually have the file
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have the file");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have the file"
+    );
 
     // Verify committed state
     let meta = meta_of(&coord.state.db, key)?.expect("Meta should exist");
@@ -225,7 +258,11 @@ async fn test_abort_guard_disarmed_timing() -> anyhow::Result<()> {
 
     // The key behavior: once we reach commit phase, guard is disarmed
     // So even with commit failures, we should get retries, not aborts
-    assert_eq!(status, reqwest::StatusCode::CREATED, "PUT should succeed via commit retries");
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CREATED,
+        "PUT should succeed via commit retries"
+    );
     assert_eq!(etag, expected_etag, "ETag should match");
 
     // Verify final state shows successful commit (no abort happened)
@@ -234,7 +271,11 @@ async fn test_abort_guard_disarmed_timing() -> anyhow::Result<()> {
 
     let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
     let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(volumes_with_file.len(), 3, "All volumes should have file (no abort)");
+    assert_eq!(
+        volumes_with_file.len(),
+        3,
+        "All volumes should have file (no abort)"
+    );
 
     // Verify data integrity
     let redirect_client = create_redirect_client()?;

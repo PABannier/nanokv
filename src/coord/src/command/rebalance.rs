@@ -1,25 +1,25 @@
 use anyhow::{Context, Result};
-use tracing::info;
 use clap::Parser;
-use std::collections::{HashSet, HashMap};
-use std::path::PathBuf;
-use std::fs;
-use serde::{Serialize, Deserialize};
-use std::sync::Arc;
-use tokio::sync::Semaphore;
-use reqwest::Client;
-use std::time::Duration;
-use std::path::Path;
-use serde_json;
-use futures_util::{stream::FuturesUnordered};
 use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
+use tracing::info;
 
+use crate::command::common::{copy_one, nodes_from_db, nodes_from_explicit, probe_exists};
 use crate::core::meta::{KvDb, Meta, TxState};
 use crate::core::placement::{choose_top_n_alive, rank_nodes};
-use crate::command::common::{nodes_from_db, nodes_from_explicit, copy_one, probe_exists};
 
-use common::time_utils::utc_now_ms;
 use common::constants::META_KEY_PREFIX;
+use common::time_utils::utc_now_ms;
 
 use crate::core::node::NodeInfo;
 
@@ -72,8 +72,8 @@ struct Move {
     pub key_enc: String,
     pub size: u64,
     pub etag: String,
-    pub src: String,  // node_id
-    pub dst: String,  // node_id
+    pub src: String, // node_id
+    pub dst: String, // node_id
 }
 
 // A plan is the list of required ADD moves to reach current HRW placement.
@@ -100,7 +100,12 @@ impl Plan {
 
 // Journal entry for resumability
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-enum MoveState { Planned, InFlight, Committed, Failed(String) }
+enum MoveState {
+    Planned,
+    InFlight,
+    Committed,
+    Failed(String),
+}
 
 // Key in RocksDB journal: move:{key}:{dst}
 const JOURNAL_KEY_PREFIX: &str = "move:";
@@ -109,23 +114,24 @@ fn jkey(key_enc: &str, dst: &str) -> String {
 }
 
 fn get_journal(db: &KvDb, mv: &Move) -> Result<Option<MoveState>> {
-    db.get::<MoveState>(&jkey(&mv.key_enc, &mv.dst)).map_err(Into::into)
+    db.get::<MoveState>(&jkey(&mv.key_enc, &mv.dst))
 }
 
 fn set_journal(db: &KvDb, mv: &Move, state: MoveState) -> Result<()> {
-    db.put::<MoveState>(&jkey(&mv.key_enc, &mv.dst), &state).map_err(Into::into)
+    db.put::<MoveState>(&jkey(&mv.key_enc, &mv.dst), &state)
 }
 
-
 pub async fn rebalance(args: RebalanceArgs) -> Result<()> {
-    let db = KvDb::open(&Path::new(&args.index))?;
+    let db = KvDb::open(Path::new(&args.index))?;
 
     let nodes = if let Some(vs) = args.volumes.clone() {
         nodes_from_explicit(&vs)
     } else {
         nodes_from_db(&db, false /* include suspect */)?
     };
-    if nodes.is_empty() { anyhow::bail!("no nodes to rebalance"); }
+    if nodes.is_empty() {
+        anyhow::bail!("no nodes to rebalance");
+    }
 
     let cfg = RebalanceCfg {
         replicas: args.replicas,
@@ -137,7 +143,10 @@ pub async fn rebalance(args: RebalanceArgs) -> Result<()> {
     if let Some(plan_in) = args.plan_in {
         let plan = Plan::from_path(&plan_in)?;
         let rep = execute(&db, &nodes, &cfg, plan).await?;
-        info!("Rebalance executed: moves_done={} moves_failed={}", rep.done, rep.failed);
+        info!(
+            "Rebalance executed: moves_done={} moves_failed={}",
+            rep.done, rep.failed
+        );
     } else {
         let plan = plan(&db, &nodes, &cfg).await?;
         if let Some(out) = args.plan_out {
@@ -146,7 +155,10 @@ pub async fn rebalance(args: RebalanceArgs) -> Result<()> {
         } else {
             // Default: execute immediately
             let rep = execute(&db, &nodes, &cfg, plan).await?;
-            info!("Rebalance executed: moves_done={} moves_failed={}", rep.done, rep.failed);
+            info!(
+                "Rebalance executed: moves_done={} moves_failed={}",
+                rep.done, rep.failed
+            );
         }
     }
 
@@ -158,24 +170,36 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
         let meta: Meta = serde_json::from_slice(&v)?;
-        if !matches!(meta.state, TxState::Committed) { continue; }
+        if !matches!(meta.state, TxState::Committed) {
+            continue;
+        }
 
         // Desired set (HRW top-N)
-        let desired = choose_top_n_alive(&nodes, &key_enc, cfg.replicas)
-            .iter().map(|n| n.node_id.clone()).collect::<Vec<String>>();
+        let desired = choose_top_n_alive(nodes, &key_enc, cfg.replicas)
+            .iter()
+            .map(|n| n.node_id.clone())
+            .collect::<Vec<String>>();
 
         // Present set (what Meta says we have)
         let present: HashSet<String> = meta.replicas.iter().cloned().collect();
 
         // For each missing desired dst, plan a move from some present src
         for dst in desired.iter().filter(|d| !present.contains(*d)) {
-            let src = meta.replicas.iter().find(|id| present.contains(*id))
+            let src = meta
+                .replicas
+                .iter()
+                .find(|id| present.contains(*id))
                 .cloned()
-                .or_else(|| meta.replicas.get(0).cloned());
-            
+                .or_else(|| meta.replicas.first().cloned());
+
             if let Some(src) = src {
                 moves.push(Move {
                     key_enc: key_enc.clone(),
@@ -198,26 +222,35 @@ async fn plan(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg) -> Result<Plan>
 // Execution report
 #[derive(Debug, Default)]
 struct ExecReport {
-    pub total: usize,
     pub done: usize,
     pub failed: usize,
 }
 
-async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) -> Result<ExecReport> {
+async fn execute(
+    db: &KvDb,
+    nodes: &[NodeInfo],
+    cfg: &RebalanceCfg,
+    plan: Plan,
+) -> Result<ExecReport> {
     let http = Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))
         .tcp_keepalive(Duration::from_secs(30))
         .build()?;
 
     // Node maps & semaphores
-    let by_id = nodes.iter().map(|n| (n.node_id.clone(), n.clone())).collect::<HashMap<String, NodeInfo>>();
+    let by_id = nodes
+        .iter()
+        .map(|n| (n.node_id.clone(), n.clone()))
+        .collect::<HashMap<String, NodeInfo>>();
     let per_node: Arc<HashMap<String, Arc<Semaphore>>> = Arc::new(
-        nodes.iter().map(|n| (n.node_id.clone(), Arc::new(Semaphore::new(cfg.per_node)))).collect()
+        nodes
+            .iter()
+            .map(|n| (n.node_id.clone(), Arc::new(Semaphore::new(cfg.per_node))))
+            .collect(),
     );
     let global_sem = Arc::new(Semaphore::new(cfg.concurrency));
 
     let mut report = ExecReport::default();
-    report.total = plan.moves.len();
 
     let mut tasks = FuturesUnordered::new();
 
@@ -253,7 +286,17 @@ async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) 
 
             set_journal(&db, &mv, MoveState::InFlight).ok();
 
-            match copy_one(&http, &src, &dst, &mv.key_enc, mv.size, &mv.etag, "rebalance").await {
+            match copy_one(
+                &http,
+                &src,
+                &dst,
+                &mv.key_enc,
+                mv.size,
+                &mv.etag,
+                "rebalance",
+            )
+            .await
+            {
                 Ok(_) => {
                     set_journal(&db, &mv, MoveState::Committed).ok();
                     Ok(true)
@@ -276,37 +319,47 @@ async fn execute(db: &KvDb, nodes: &[NodeInfo], cfg: &RebalanceCfg, plan: Plan) 
     }
 
     // Final pass: for keys that reached the new destinations, refresh metas order to HRW top-N
-    refresh_metas(&db, nodes, cfg.replicas).await?;
+    refresh_metas(db, nodes, cfg.replicas).await?;
 
     Ok(report)
 }
 
 async fn refresh_metas(db: &KvDb, nodes: &[NodeInfo], n: usize) -> Result<()> {
     let mut by_id: HashMap<String, NodeInfo> = HashMap::new();
-    for nfo in nodes.iter() { by_id.insert(nfo.node_id.clone(), nfo.clone()); }
+    for nfo in nodes.iter() {
+        by_id.insert(nfo.node_id.clone(), nfo.clone());
+    }
 
     let http = Client::new();
 
     for kv in db.iter() {
         let (k, v) = kv?;
-        if !k.starts_with(META_KEY_PREFIX.as_bytes()) { continue; }
-        let key_enc = std::str::from_utf8(&k)?.strip_prefix(META_KEY_PREFIX).unwrap().to_string();
+        if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
+            continue;
+        }
+        let key_enc = std::str::from_utf8(&k)?
+            .strip_prefix(META_KEY_PREFIX)
+            .unwrap()
+            .to_string();
         let mut meta: Meta = serde_json::from_slice(&v)?;
-        if !matches!(meta.state, TxState::Committed) { continue; }
+        if !matches!(meta.state, TxState::Committed) {
+            continue;
+        }
 
         // Probe which nodes *actually* have the blob
         let mut present: Vec<NodeInfo> = Vec::new();
         for id in meta.replicas.iter() {
-            if let Some(n) = by_id.get(id) {
-                if probe_exists(&http, n, &key_enc).await.unwrap_or(false) {
-                    present.push(n.clone());
-                }
+            if let Some(n) = by_id.get(id)
+                && probe_exists(&http, n, &key_enc).await.unwrap_or(false)
+            {
+                present.push(n.clone());
             }
         }
 
         // Keep order by HRW and trim to N
-        let ranked = rank_nodes(&key_enc, &nodes);
-        let mut ordered: Vec<String> = ranked.into_iter()
+        let ranked = rank_nodes(&key_enc, nodes);
+        let mut ordered: Vec<String> = ranked
+            .into_iter()
             .filter(|n| present.iter().any(|p| p.node_id == n.node_id))
             .take(n)
             .map(|n| n.node_id.clone())
@@ -314,8 +367,12 @@ async fn refresh_metas(db: &KvDb, nodes: &[NodeInfo], n: usize) -> Result<()> {
 
         // If missing (e.g., some recently added), include them until N
         for p in present {
-            if ordered.len() >= n { break; }
-            if !ordered.contains(&p.node_id) { ordered.push(p.node_id.clone()); }
+            if ordered.len() >= n {
+                break;
+            }
+            if !ordered.contains(&p.node_id) {
+                ordered.push(p.node_id.clone());
+            }
         }
 
         if !ordered.is_empty() && ordered != meta.replicas {

@@ -1,6 +1,6 @@
-use std::{path::Path, sync::Arc};
-use rocksdb::{Options, DB, ReadOptions, IteratorMode};
-use serde::{de::DeserializeOwned, Serialize, Deserialize};
+use rocksdb::{DB, IteratorMode, Options, ReadOptions};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::{fmt::Display, path::Path, sync::Arc};
 
 use common::time_utils::utc_now_ms;
 
@@ -19,7 +19,9 @@ impl KvDb {
         opts.set_max_open_files(MAX_OPEN_FILES);
         opts.set_compression_type(rocksdb::DBCompressionType::Zstd);
         let db = DB::open(&opts, path)?;
-        Ok(Self { inner: Arc::new(db) })
+        Ok(Self {
+            inner: Arc::new(db),
+        })
     }
 
     pub fn get<T: DeserializeOwned>(&self, key: &str) -> anyhow::Result<Option<T>> {
@@ -51,17 +53,17 @@ impl KvDb {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TxState {
-    Pending,     // upload started, not committed
-    Committed,   // fully durable and visible
-    Tombstoned   // deleted (logical)
+    Pending,    // upload started, not committed
+    Committed,  // fully durable and visible
+    Tombstoned, // deleted (logical)
 }
 
-impl ToString for TxState {
-    fn to_string(&self) -> String {
+impl Display for TxState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TxState::Pending => String::from("Pending"),
-            TxState::Committed  => String::from("Committed"),
-            TxState::Tombstoned  => String::from("Tombstoned"),
+            TxState::Pending => write!(f, "Pending"),
+            TxState::Committed => write!(f, "Committed"),
+            TxState::Tombstoned => write!(f, "Tombstoned"),
         }
     }
 }
@@ -70,10 +72,10 @@ impl ToString for TxState {
 pub struct Meta {
     pub state: TxState,
     pub size: u64,
-    pub etag_hex: String,           // hex blake3
-    pub created_ms: i128,           // epoch ms
-    pub upload_id: Option<String>,  // present during Pending
-    pub replicas: Vec<String>,      // node_ids
+    pub etag_hex: String,          // hex blake3
+    pub created_ms: i128,          // epoch ms
+    pub upload_id: Option<String>, // present during Pending
+    pub replicas: Vec<String>,     // node_ids
 }
 
 impl Meta {
@@ -84,18 +86,18 @@ impl Meta {
             etag_hex: String::new(),
             created_ms: utc_now_ms(),
             upload_id: Some(upload_id),
-            replicas: replicas,
+            replicas,
         }
     }
 
     pub fn committed(size: u64, etag_hex: String, replicas: Vec<String>) -> Self {
         Self {
             state: TxState::Committed,
-            size: size,
-            etag_hex: etag_hex,
+            size,
+            etag_hex,
             created_ms: utc_now_ms(),
             upload_id: None,
-            replicas: replicas,
+            replicas,
         }
     }
 

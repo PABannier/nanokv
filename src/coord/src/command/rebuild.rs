@@ -1,4 +1,4 @@
-use anyhow::{Result, Context, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use futures::stream::{self, StreamExt};
 use reqwest::{Client, Url};
@@ -10,9 +10,9 @@ use std::{
 };
 use tracing::{error, info, warn};
 
-use common::{file_utils::meta_key_for, url_utils::node_id_from_url};
-use common::schemas::{ListResponse, BlobHead};
+use common::schemas::{BlobHead, ListResponse};
 use common::time_utils::utc_now_ms;
+use common::{file_utils::meta_key_for, url_utils::node_id_from_url};
 
 use crate::core::meta::{KvDb, Meta, TxState};
 
@@ -43,7 +43,11 @@ pub struct RebuildArgs {
     pub http_timeout_secs: u64,
 }
 
-type Variant = (String /*volume_url*/, u64 /*size*/, Option<String> /*etag*/);
+type Variant = (
+    String,         /*volume_url*/
+    u64,            /*size*/
+    Option<String>, /*etag*/
+);
 
 pub struct RebuildReport {
     pub scanned_keys: usize,
@@ -99,9 +103,7 @@ pub async fn rebuild(args: RebuildArgs) -> Result<()> {
         &db,
         &vol_ids,
         &present,
-        args.deep,
-        args.dry_run,
-        args.concurrency,
+        &args,
         Duration::from_secs(args.http_timeout_secs),
     )
     .await
@@ -112,9 +114,11 @@ pub async fn rebuild(args: RebuildArgs) -> Result<()> {
 }
 
 /// Build map: key_enc -> set{volume_url_that_has_it}
-async fn scan(http: &Client, volumes: &[Url], timeout: Duration)
-    -> Result<HashMap<String, HashSet<String>>>
-{
+async fn scan(
+    http: &Client,
+    volumes: &[Url],
+    timeout: Duration,
+) -> Result<HashMap<String, HashSet<String>>> {
     let mut present: HashMap<String, HashSet<String>> = HashMap::new();
 
     for base in volumes {
@@ -140,13 +144,20 @@ async fn scan(http: &Client, volumes: &[Url], timeout: Duration)
             if !resp.status().is_success() {
                 bail!("{} returned {}", url, resp.status());
             }
-            let page: ListResponse = resp.json().await
+            let page: ListResponse = resp
+                .json()
+                .await
                 .with_context(|| format!("decode list page from {}", base))?;
             for key_enc in page.keys {
-                present.entry(key_enc).or_default().insert(base.as_str().to_string());
+                present
+                    .entry(key_enc)
+                    .or_default()
+                    .insert(base.as_str().to_string());
             }
             after = page.next_after;
-            if after.is_none() { break; }
+            if after.is_none() {
+                break;
+            }
         }
     }
     Ok(present)
@@ -163,9 +174,7 @@ async fn reconcile(
     db: &KvDb,
     vol_ids: &HashMap<String, String>, // base_url -> node_id
     present: &HashMap<String, HashSet<String>>,
-    deep: bool,
-    dry_run: bool,
-    concurrency: usize,
+    args: &RebuildArgs,
     timeout: Duration,
 ) -> Result<RebuildReport> {
     let mut report = RebuildReport {
@@ -188,10 +197,13 @@ async fn reconcile(
             async move {
                 // If DB has a tombstone, preserve it
                 let meta_key = meta_key_for(&key_enc);
-                if let Ok(Some(existing)) = db.get::<Meta>(&meta_key) {
-                    if existing.state == TxState::Tombstoned {
-                        return Ok::<(Outcome, String), anyhow::Error>((Outcome::TombstonePreserved, key_enc));
-                    }
+                if let Ok(Some(existing)) = db.get::<Meta>(&meta_key)
+                    && existing.state == TxState::Tombstoned
+                {
+                    return Ok::<(Outcome, String), anyhow::Error>((
+                        Outcome::TombstonePreserved,
+                        key_enc,
+                    ));
                 }
 
                 // Probe volumes: in deep=false mode, stop after first success
@@ -204,7 +216,7 @@ async fn reconcile(
                     {
                         let mut qp = u.query_pairs_mut();
                         qp.append_pair("key", &key_enc);
-                        qp.append_pair("deep", if deep { "true" } else { "false" });
+                        qp.append_pair("deep", if args.deep { "true" } else { "false" });
                     }
 
                     // tiny retry (3 attempts) for transient issues
@@ -212,19 +224,26 @@ async fn reconcile(
                     let head: Option<BlobHead> = loop {
                         attempt += 1;
                         match http.get(u.clone()).timeout(timeout).send().await {
-                            Ok(r) if r.status().is_success() => {
-                                match r.json::<BlobHead>().await {
-                                    Ok(h) => break Some(h),
-                                    Err(e) => { warn!(%e, "bad JSON from {}", u); break None; }
+                            Ok(r) if r.status().is_success() => match r.json::<BlobHead>().await {
+                                Ok(h) => break Some(h),
+                                Err(e) => {
+                                    warn!(%e, "bad JSON from {}", u);
+                                    break None;
                                 }
-                            }
+                            },
                             Ok(r) => {
-                                if r.status().is_server_error() && attempt < 3 { continue; }
+                                if r.status().is_server_error() && attempt < 3 {
+                                    continue;
+                                }
                                 warn!(status=%r.status(), url=%u, "head non-success");
                                 break None;
                             }
                             Err(e) => {
-                                if (e.is_connect() || e.is_timeout() || e.is_request()) && attempt < 3 { continue; }
+                                if (e.is_connect() || e.is_timeout() || e.is_request())
+                                    && attempt < 3
+                                {
+                                    continue;
+                                }
                                 warn!(%e, url=%u, "head transport error");
                                 break None;
                             }
@@ -234,10 +253,14 @@ async fn reconcile(
                     match head {
                         Some(h) if h.exists => {
                             variants.push((v.clone(), h.size, h.etag));
-                            if !deep { break; } // fast path: first good size is enough
+                            if !args.deep {
+                                break;
+                            } // fast path: first good size is enough
                         }
                         Some(_) => { /* exists=false: ignore */ }
-                        None => { probe_errs += 1; }
+                        None => {
+                            probe_errs += 1;
+                        }
                     }
                 }
 
@@ -272,7 +295,7 @@ async fn reconcile(
                     .filter_map(|(vurl, _, _)| vol_ids.get(vurl).cloned())
                     .collect();
 
-                if !dry_run {
+                if !args.dry_run {
                     let meta = Meta {
                         state: TxState::Committed,
                         size,
@@ -287,7 +310,7 @@ async fn reconcile(
                 Ok((Outcome::Written, key_enc))
             }
         })
-        .buffer_unordered(concurrency)
+        .buffer_unordered(args.concurrency)
         .collect::<Vec<_>>()
         .await;
 
@@ -299,7 +322,9 @@ async fn reconcile(
             Ok((Outcome::Conflict { variants }, key)) => {
                 report.conflicts += 1;
                 if report.sample_conflicts.len() < 20 {
-                    report.sample_conflicts.push((key, variants.into_iter().take(4).collect()));
+                    report
+                        .sample_conflicts
+                        .push((key, variants.into_iter().take(4).collect()));
                 }
             }
             Ok((Outcome::NoData { probe_errs }, _)) => report.probe_errors += probe_errs,

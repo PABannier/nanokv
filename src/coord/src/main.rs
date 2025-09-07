@@ -1,12 +1,11 @@
 use clap::{Parser, Subcommand};
 
 use coord::command::gc::{GcArgs, gc};
-use coord::command::serve::{ServeArgs, serve};
-use coord::command::rebuild::{RebuildArgs, rebuild};
-use coord::command::verify::{VerifyArgs, verify};
 use coord::command::rebalance::{RebalanceArgs, rebalance};
+use coord::command::rebuild::{RebuildArgs, rebuild};
 use coord::command::repair::{RepairArgs, repair};
-
+use coord::command::serve::{ServeArgs, serve};
+use coord::command::verify::{VerifyArgs, verify};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about)]
@@ -31,9 +30,8 @@ enum Cmd {
     Gc(GcArgs),
 }
 
-
 #[tokio::main]
-async fn main() -> anyhow::Result<()>{
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter("info")
         .with_target(false)
@@ -43,12 +41,24 @@ async fn main() -> anyhow::Result<()>{
     let args = Args::parse();
 
     match args.cmd {
-        Cmd::Serve(serve_args) => { serve(serve_args).await?; },
-        Cmd::Rebuild(rebuild_args) => { rebuild(rebuild_args).await?; },
-        Cmd::Verify(verify_args) => { verify(verify_args).await?; },
-        Cmd::Rebalance(rebalance_args) => { rebalance(rebalance_args).await?; },
-        Cmd::Repair(repair_args) => { repair(repair_args).await?; },
-        Cmd::Gc(gc_args) => { gc(gc_args).await?; },
+        Cmd::Serve(serve_args) => {
+            serve(serve_args).await?;
+        }
+        Cmd::Rebuild(rebuild_args) => {
+            rebuild(rebuild_args).await?;
+        }
+        Cmd::Verify(verify_args) => {
+            verify(verify_args).await?;
+        }
+        Cmd::Rebalance(rebalance_args) => {
+            rebalance(rebalance_args).await?;
+        }
+        Cmd::Repair(repair_args) => {
+            repair(repair_args).await?;
+        }
+        Cmd::Gc(gc_args) => {
+            gc(gc_args).await?;
+        }
     }
 
     Ok(())

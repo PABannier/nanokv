@@ -9,7 +9,7 @@ use crate::store::disk_usage;
 pub async fn heartbeat_loop(
     state: VolumeState,
     interval: std::time::Duration,
-    mut shutdown: tokio::sync::watch::Receiver<bool>
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let url = format!("{}/admin/heartbeat", state.coordinator_url);
     let mut tick = tokio::time::interval(interval);
