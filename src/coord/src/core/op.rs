@@ -74,7 +74,7 @@ pub mod meta {
         meta_key: &str,
         size: u64,
         etag_hex: String,
-        replicas: &Vec<NodeInfo>
+        replicas: &[NodeInfo]
     ) -> Result<(), ApiError> {
         let replica_ids = replicas.iter().map(|r| r.node_id.clone()).collect::<Vec<_>>();
         let meta = Meta::committed(size, etag_hex, replica_ids);
