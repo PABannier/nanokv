@@ -18,18 +18,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: fmt
-        run: |
-          ls src
-          cargo fmt --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: clippy
-        run: |
-          ls src
-          cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: test
         env:
           RUST_BACKTRACE: 1
-        run: |
-          ls src
-          cargo test --all --all-features --locked
+        run: cargo test --all --all-features --locked
