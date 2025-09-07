@@ -36,7 +36,7 @@ async fn test_delete_idempotent() -> anyhow::Result<()> {
     // Verify meta becomes Tombstoned
     let key = key_utils::Key::from_percent_encoded("delete-test").unwrap();
     let key_enc = key.enc();
-    let meta_key = key_utils::meta_key_for(&key_enc);
+    let meta_key = key_utils::meta_key_for(key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some(), "Meta should exist after delete");
 

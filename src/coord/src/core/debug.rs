@@ -36,7 +36,7 @@ pub async fn debug_placement(
         .values()
         .map(|v| v.info.clone())
         .collect::<Vec<_>>();
-    let replicas = choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas);
+    let replicas = choose_top_n_alive(&nodes, key_enc, ctx.n_replicas);
 
     let node_ids: Vec<String> = replicas
         .iter()

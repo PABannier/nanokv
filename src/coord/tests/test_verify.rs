@@ -32,7 +32,7 @@ async fn test_verify_under_replication() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Verify both volumes have the file initially
     let meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -103,7 +103,7 @@ async fn test_verify_corrupted_size_mismatch() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Corrupt the meta by changing the size
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -168,7 +168,7 @@ async fn test_verify_deep_etag_mismatch() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Corrupt the meta by changing the etag
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -247,7 +247,7 @@ async fn test_verify_unindexed_and_should_gc() -> anyhow::Result<()> {
     // Verify tombstone exists
     let key = Key::from_percent_encoded(key_tombstone).unwrap();
     let key_enc_tombstone = key.enc();
-    let meta_key_tombstone = meta_key_for(&key_enc_tombstone);
+    let meta_key_tombstone = meta_key_for(key_enc_tombstone);
     let meta_tombstone: Option<Meta> = coord.state.db.get(&meta_key_tombstone)?;
     assert!(meta_tombstone.is_some());
     assert_eq!(meta_tombstone.unwrap().state, TxState::Tombstoned);

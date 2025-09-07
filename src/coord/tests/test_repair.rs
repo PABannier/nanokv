@@ -33,7 +33,7 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Simulate under-replication by modifying the meta to only list vol1
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -115,7 +115,7 @@ async fn test_repair_uses_valid_source_only() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Simulate corruption by modifying meta to only list vol1, but vol2 has valid copy
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -198,7 +198,7 @@ async fn test_repair_skips_tombstoned_metas() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Verify meta is tombstoned
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
@@ -271,7 +271,7 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Simulate scenario where destination has file but meta doesn't list it
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -349,7 +349,7 @@ async fn test_repair_dry_run() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Simulate under-replication
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -428,7 +428,7 @@ async fn test_repair_resumability_journal() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Simulate under-replication
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();

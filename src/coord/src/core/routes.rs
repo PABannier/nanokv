@@ -66,7 +66,7 @@ pub async fn put_object(
     let mut guard = AbortGuard::new(&ctx.http_client, &replicas, upload_id.clone());
 
     // Prepare all replicas with a retry
-    prepare::retry_prepare_all(&ctx.http_client, &replicas, &key_enc, &upload_id).await?;
+    prepare::retry_prepare_all(&ctx.http_client, &replicas, key_enc, &upload_id).await?;
 
     // Write to the head node (single-shot; long timeout). If this fails, abort.
     let head = replicas.first().unwrap();
@@ -90,7 +90,7 @@ pub async fn put_object(
     guard.disarm();
 
     // Commit
-    commit::retry_commit_all(&ctx.http_client, &replicas, &upload_id, &key_enc).await?;
+    commit::retry_commit_all(&ctx.http_client, &replicas, &upload_id, key_enc).await?;
 
     // Write committed transaction in DB
     meta::write_committed_meta(&ctx.db, &meta_key, size, etag.clone(), &replicas)?;
@@ -116,7 +116,7 @@ pub async fn get_object(
 ) -> Result<impl IntoResponse, ApiError> {
     let key = Key::from_percent_encoded(&raw_key)?;
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     let meta = match ctx.db.get::<Meta>(&meta_key)? {
         Some(m) if m.state == TxState::Committed => m,
@@ -172,7 +172,7 @@ pub async fn delete_object(
 ) -> Result<StatusCode, ApiError> {
     let key = Key::from_percent_encoded(&raw_key)?;
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     let existing = match ctx.db.get::<Meta>(&meta_key)? {
         None => return Err(ApiError::KeyNotFound),
@@ -219,7 +219,7 @@ pub async fn head_object(
 ) -> Result<(StatusCode, HeaderMap), ApiError> {
     let key = Key::from_percent_encoded(&raw_key)?;
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     let meta = match ctx.db.get::<Meta>(&meta_key)? {
         None => return Err(ApiError::KeyNotFound),

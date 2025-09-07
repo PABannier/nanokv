@@ -522,7 +522,7 @@ pub fn meta_of(db: &KvDb, key: &str) -> Result<Option<Meta>> {
     use common::key_utils::{Key, meta_key_for};
     let key = Key::from_percent_encoded(key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
     db.get(&meta_key)
 }
 
@@ -536,7 +536,7 @@ pub fn which_volume_has_file(volumes: &[&TestVolume], key: &str) -> Result<Vec<S
     let mut found_nodes = Vec::new();
 
     for vol in volumes {
-        let path = blob_path(&vol.state.data_root, &key_enc);
+        let path = blob_path(&vol.state.data_root, key_enc);
         if path.exists() {
             found_nodes.push(vol.state.node_id.clone());
         }

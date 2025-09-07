@@ -39,7 +39,7 @@ async fn test_gc_deletes_tombstones_past_ttl_default_target() -> anyhow::Result<
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Verify tombstone exists
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -127,7 +127,7 @@ async fn test_gc_broadcast_deletes() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Make tombstone old
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -208,7 +208,7 @@ async fn test_gc_purge_metas() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Make tombstone old
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -492,7 +492,7 @@ async fn test_gc_dry_run() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
 
     // Make tombstone old
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();

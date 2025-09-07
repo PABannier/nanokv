@@ -43,7 +43,7 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
     // Assert RocksDB meta for key is Committed with correct fields
     let key = key_utils::Key::from_percent_encoded("test-key").unwrap();
     let key_enc = key.enc();
-    let meta_key = key_utils::meta_key_for(&key_enc);
+    let meta_key = key_utils::meta_key_for(key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some(), "Meta not found in RocksDB");
 
@@ -54,7 +54,7 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
     assert_eq!(meta.replicas, vec!["vol-1"]);
 
     // Assert volume has the file at correct location with same size
-    let blob_file_path = file_utils::blob_path(&volume.state.data_root, &key_enc);
+    let blob_file_path = file_utils::blob_path(&volume.state.data_root, key_enc);
     assert!(
         blob_file_path.exists(),
         "Blob file not found at {:?}",

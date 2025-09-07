@@ -34,7 +34,7 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     // Now clear the meta from the database to simulate the scenario
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
     coord.state.db.delete(&meta_key)?;
 
     // Run rebuild with deep=false - use a separate DB for rebuild
@@ -95,7 +95,7 @@ async fn test_rebuild_preserves_tombstones() -> anyhow::Result<()> {
     // Verify meta is tombstoned
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some());
     assert_eq!(meta.unwrap().state, TxState::Tombstoned);
@@ -155,7 +155,7 @@ async fn test_rebuild_dry_run() -> anyhow::Result<()> {
 
     let key = Key::from_percent_encoded(raw_key).unwrap();
     let key_enc = key.enc();
-    let meta_key = meta_key_for(&key_enc);
+    let meta_key = meta_key_for(key_enc);
     coord.state.db.delete(&meta_key)?;
 
     // Run rebuild in dry-run mode
