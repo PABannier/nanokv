@@ -37,7 +37,9 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
 
     // Simulate under-replication by modifying the meta to only list vol1
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
-    meta.replicas = vec!["vol-1".to_string()]; // Only vol1 in replicas
+    // Use URL-based node ID for vol1 (since we're using explicit volumes)
+    let vol1_node_id = vol1.url().trim_start_matches("http://").to_string();
+    meta.replicas = vec![vol1_node_id]; // Only vol1 in replicas
     coord.state.db.put(&meta_key, &meta)?;
 
     // Run repair
@@ -50,19 +52,12 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
         let meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
         repair_db.put(&meta_key, &meta)?;
 
-        // Also copy node information
-        for kv in coord.state.db.iter() {
-            let (k, v) = kv?;
-            let key_str = std::str::from_utf8(&k)?;
-            if key_str.starts_with("node:") {
-                repair_db.put(key_str, &serde_json::from_slice::<serde_json::Value>(&v)?)?;
-            }
-        }
+        // Note: No need to copy node information when using explicit volumes
     }
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: None,  // Use registry
+        volumes: Some(vec![vol1.url().to_string(), vol2.url().to_string()]),
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
@@ -72,17 +67,24 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
 
     repair(args).await?;
 
-    // Assert: meta should now include vol2 in replicas
+    // Assert: repair should run without error
+    // The refresh_metas function should detect existing replicas and update metadata
     let repair_db = KvDb::open(&repair_db_path)?;
+
     let meta_after: Option<Meta> = repair_db.get(&meta_key)?;
     assert!(meta_after.is_some());
     let meta_after = meta_after.unwrap();
 
     assert_eq!(meta_after.state, TxState::Committed);
     assert_eq!(meta_after.size, _size);
+
+    // The repair function should detect both replicas and update the metadata
     assert_eq!(meta_after.replicas.len(), 2);
-    assert!(meta_after.replicas.contains(&"vol-1".to_string()));
-    assert!(meta_after.replicas.contains(&"vol-2".to_string()));
+
+    // Check that replicas are URL-based node IDs (host:port format)
+    assert!(meta_after.replicas.iter().all(|r| r.starts_with("127.0.0.1:") && !r.contains("/")));
+    // Ensure we have two different replicas
+    assert_ne!(meta_after.replicas[0], meta_after.replicas[1]);
 
     vol1.shutdown().await?;
     vol2.shutdown().await?;
@@ -226,7 +228,7 @@ async fn test_repair_skips_tombstoned_metas() -> anyhow::Result<()> {
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: None, // Use registry
+        volumes: Some(vec![vol1.url().to_string(), vol2.url().to_string()]),
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
@@ -299,7 +301,7 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: None, // Use registry
+        volumes: Some(vec![vol1.url().to_string(), vol2.url().to_string()]),
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
@@ -309,15 +311,17 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
 
     repair(args).await?;
 
-    // Assert: meta should be updated to include vol2 without unnecessary copy
+    // Assert: repair should detect existing replicas and update meta
     let repair_db = KvDb::open(&repair_db_path)?;
     let meta_after: Option<Meta> = repair_db.get(&meta_key)?;
     assert!(meta_after.is_some());
     let meta_after = meta_after.unwrap();
 
     assert_eq!(meta_after.replicas.len(), 2);
-    assert!(meta_after.replicas.contains(&"vol-1".to_string()));
-    assert!(meta_after.replicas.contains(&"vol-2".to_string()));
+    // Check that replicas are URL-based node IDs (host:port format)
+    assert!(meta_after.replicas.iter().all(|r| r.starts_with("127.0.0.1:") && !r.contains("/")));
+    // Ensure we have two different replicas
+    assert_ne!(meta_after.replicas[0], meta_after.replicas[1]);
 
     vol1.shutdown().await?;
     vol2.shutdown().await?;

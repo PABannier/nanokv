@@ -20,7 +20,7 @@ use crate::core::{
     placement::{choose_top_n_alive, rank_nodes},
 };
 use common::constants::META_KEY_PREFIX;
-use common::key_utils::get_key_enc_from_meta_key;
+use common::key_utils::{get_key_enc_from_meta_key, meta_key_for};
 
 const J_REPAIR_PREFIX: &str = "repair"; // repair:{key}:{dst} -> Planned|InFlight|Committed|Failed(msg)
 
@@ -318,7 +318,9 @@ pub async fn repair(args: RepairArgs) -> Result<()> {
     }
 
     // Refresh metas (present set, HRW order)
-    refresh_metas(&db, &nodes, args.n_replicas, &mut report).await?;
+    if !args.dry_run {
+        refresh_metas(&db, &nodes, args.n_replicas, &mut report).await?;
+    }
 
     info!("{}", report);
     Ok(())
@@ -378,7 +380,8 @@ async fn refresh_metas(
 
         if !ordered.is_empty() && meta.replicas != ordered {
             meta.replicas = ordered;
-            db.put(&format!("{META_KEY_PREFIX}{key_enc}"), &meta)?;
+            let meta_key = meta_key_for(&key_enc);
+            db.put(&meta_key, &meta)?;
             report.updated_metas += 1;
         }
     }

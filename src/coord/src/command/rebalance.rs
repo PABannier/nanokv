@@ -19,7 +19,7 @@ use crate::core::meta::{KvDb, Meta, TxState};
 use crate::core::placement::{choose_top_n_alive, rank_nodes};
 
 use common::constants::META_KEY_PREFIX;
-use common::key_utils::get_key_enc_from_meta_key;
+use common::key_utils::{get_key_enc_from_meta_key, meta_key_for};
 use common::time_utils::utc_now_ms;
 
 use crate::core::node::NodeInfo;
@@ -372,7 +372,7 @@ async fn refresh_metas(db: &KvDb, nodes: &[NodeInfo], n: usize) -> Result<()> {
 
         if !ordered.is_empty() && ordered != meta.replicas {
             meta.replicas = ordered;
-            db.put(&format!("{}:{}", META_KEY_PREFIX, key_enc), &meta)?;
+            db.put(&meta_key_for(&key_enc), &meta)?;
         }
     }
 

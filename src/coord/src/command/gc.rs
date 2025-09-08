@@ -14,7 +14,7 @@ use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use common::constants::META_KEY_PREFIX;
-use common::key_utils::get_key_enc_from_meta_key;
+use common::key_utils::{get_key_enc_from_meta_key, meta_key_for};
 use common::schemas::{ListResponse, SweepTmpResponse};
 use common::time_utils::utc_now_ms;
 
@@ -297,7 +297,7 @@ async fn clean_tombstones(
 
         if args.purge_tombstone_meta && (args.force_purge || sent == targets.len()) && !args.dry_run
         {
-            db.delete(&format!("{}:{}", META_KEY_PREFIX, key_enc))?;
+            db.delete(&meta_key_for(&key_enc))?;
             report.tombstone_metas_purged += 1;
         }
     }
