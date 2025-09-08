@@ -40,8 +40,8 @@ async fn test_write_once_semantics() -> anyhow::Result<()> {
     assert_eq!(status2, reqwest::StatusCode::CONFLICT);
 
     // Assert RocksDB meta remains correct and only one blob exists
-    let key = key_utils::Key::from_percent_encoded("same-key").unwrap();  // percent-encoded
-    let meta_key = key_utils::meta_key_for(&key.enc());
+    let key = key_utils::Key::from_percent_encoded("same-key").unwrap(); // percent-encoded
+    let meta_key = key_utils::meta_key_for(key.enc());
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some(), "Meta not found after duplicate PUT");
 
@@ -52,7 +52,7 @@ async fn test_write_once_semantics() -> anyhow::Result<()> {
     assert_eq!(meta.replicas, vec!["vol-1"]);
 
     // Verify only one blob exists on volume
-    let blob_file_path = file_utils::blob_path(&volume.state.data_root, &key.enc());
+    let blob_file_path = file_utils::blob_path(&volume.state.data_root, key.enc());
     assert!(blob_file_path.exists(), "Blob file should exist");
 
     let file_size = std::fs::metadata(&blob_file_path)?.len();
@@ -85,7 +85,7 @@ async fn test_write_once_with_pending_state() -> anyhow::Result<()> {
 
     // Artificially create a Pending state in the DB (simulating an interrupted upload)
     let key = key_utils::Key::from_percent_encoded("pending-key").unwrap();
-    let meta_key = key_utils::meta_key_for(&key.enc());
+    let meta_key = key_utils::meta_key_for(key.enc());
     let pending_meta = Meta::pending("test-upload-id".to_string(), vec!["vol-1".to_string()]);
     coord.state.db.put(&meta_key, &pending_meta)?;
 

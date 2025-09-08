@@ -62,7 +62,11 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     assert_eq!(meta.size, size);
     assert_eq!(meta.replicas.len(), 2);
     // Check that replicas are URL-based node IDs (host:port format)
-    assert!(meta.replicas.iter().all(|r| r.starts_with("127.0.0.1:") && r.ends_with("/")));
+    assert!(
+        meta.replicas
+            .iter()
+            .all(|r| r.starts_with("127.0.0.1:") && r.ends_with("/"))
+    );
     // Ensure we have two different replicas
     assert_ne!(meta.replicas[0], meta.replicas[1]);
 

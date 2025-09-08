@@ -32,8 +32,14 @@ async fn test_pull_checksum_mismatch_abort() -> anyhow::Result<()> {
         .find(|v| v.state.node_id == *follower_node)
         .expect("Should find follower volume");
 
-    println!("Head node (should receive write): {}", &expected_replicas[0]);
-    println!("Follower nodes (should pull from head): {:?}", &expected_replicas[1..]);
+    println!(
+        "Head node (should receive write): {}",
+        &expected_replicas[0]
+    );
+    println!(
+        "Follower nodes (should pull from head): {:?}",
+        &expected_replicas[1..]
+    );
 
     // Inject etag mismatch using assumed test endpoint
     let fail_url = format!(
@@ -46,7 +52,10 @@ async fn test_pull_checksum_mismatch_abort() -> anyhow::Result<()> {
         if resp.status().is_success() {
             println!("Injected etag mismatch on follower: {}", follower_node);
         } else {
-            println!("Warning: Could not inject etag mismatch, test may not behave as expected. Status: {}", resp.status());
+            println!(
+                "Warning: Could not inject etag mismatch, test may not behave as expected. Status: {}",
+                resp.status()
+            );
         }
     } else {
         println!("Warning: Etag mismatch fault injection endpoint not available");

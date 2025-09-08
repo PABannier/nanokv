@@ -1,4 +1,4 @@
-use anyhow::{Result, bail, Context};
+use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use url::Url;
 use uuid::Uuid;

@@ -213,7 +213,7 @@ pub struct FaultQuery {
 }
 
 /// POST /admin/fail/prepare?once=true -> next prepare returns 500.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_prepare(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -232,7 +232,7 @@ pub async fn fail_prepare(
 }
 
 /// POST /admin/fail/pull?once=true -> next pull returns 500 mid-stream.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_pull(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -255,7 +255,7 @@ pub async fn fail_pull(
 }
 
 /// POST /admin/fail/commit?once=true -> next commit returns 500 or times out.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_commit(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -281,7 +281,7 @@ pub async fn fail_commit(
 }
 
 /// POST /admin/fail/read_tmp?once=true -> next read_tmp returns 500.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_read_tmp(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -300,7 +300,7 @@ pub async fn fail_read_tmp(
 }
 
 /// POST /admin/fail/etag_mismatch?once=true -> next pull reports wrong etag.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_etag_mismatch(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -319,7 +319,7 @@ pub async fn fail_etag_mismatch(
 }
 
 /// POST /admin/inject/latency?latency_ms=1000 -> inject latency into all operations
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn inject_latency(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -333,35 +333,35 @@ pub async fn inject_latency(
 }
 
 /// POST /admin/pause -> pause all volume operations
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn pause_server(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.is_paused.store(true, Ordering::Relaxed);
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/resume -> resume all volume operations
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn resume_server(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.is_paused.store(false, Ordering::Relaxed);
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/kill -> kill the volume server (simulate crash)
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn kill_server(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.is_killed.store(true, Ordering::Relaxed);
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/reset -> reset all fault injection flags
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn reset_faults(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.reset();
     Ok(StatusCode::OK)
 }
 
 // Non-test stubs that return errors
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_prepare(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -371,7 +371,7 @@ pub async fn fail_prepare(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_pull(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -381,7 +381,7 @@ pub async fn fail_pull(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_commit(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -391,7 +391,7 @@ pub async fn fail_commit(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_read_tmp(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -401,7 +401,7 @@ pub async fn fail_read_tmp(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_etag_mismatch(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -411,7 +411,7 @@ pub async fn fail_etag_mismatch(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn inject_latency(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -421,28 +421,28 @@ pub async fn inject_latency(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn pause_server(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn resume_server(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn kill_server(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn reset_faults(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"

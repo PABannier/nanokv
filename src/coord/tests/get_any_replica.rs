@@ -50,8 +50,8 @@ async fn test_get_from_any_alive_replica() -> anyhow::Result<()> {
         let nodes = list_nodes(&client, coord.url()).await?;
         let f2_node = nodes.iter().find(|n| n.node_id == f2_node_id);
         Ok(match f2_node {
-            None => true, // Node removed from list
-            Some(node) => node.status != NodeStatus::Alive // Node marked as Down/Suspect
+            None => true,                                   // Node removed from list
+            Some(node) => node.status != NodeStatus::Alive, // Node marked as Down/Suspect
         })
     })
     .await?;
@@ -391,8 +391,8 @@ async fn test_get_after_replica_replacement() -> anyhow::Result<()> {
         let nodes = list_nodes(&client, coord.url()).await?;
         let old_node = nodes.iter().find(|n| n.node_id == old_node_id);
         match old_node {
-            None => Ok(true), // Node removed from list
-            Some(node) => Ok(node.status == NodeStatus::Down) // Node marked as Down (not just Suspect)
+            None => Ok(true),                                  // Node removed from list
+            Some(node) => Ok(node.status == NodeStatus::Down), // Node marked as Down (not just Suspect)
         }
     })
     .await?;
@@ -406,9 +406,13 @@ async fn test_get_after_replica_replacement() -> anyhow::Result<()> {
     // Wait for new topology - now we should have 3 alive nodes (2 original + 1 new)
     wait_until(8000, || async {
         let nodes = list_nodes(&client, coord.url()).await?;
-        let alive_count = nodes.iter().filter(|n| n.status == NodeStatus::Alive).count();
+        let alive_count = nodes
+            .iter()
+            .filter(|n| n.status == NodeStatus::Alive)
+            .count();
         Ok(alive_count == 3)
-    }).await?;
+    })
+    .await?;
 
     println!("Volume replaced, testing GET behavior");
 

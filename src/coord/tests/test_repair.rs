@@ -82,7 +82,12 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
     assert_eq!(meta_after.replicas.len(), 2);
 
     // Check that replicas are URL-based node IDs (host:port format)
-    assert!(meta_after.replicas.iter().all(|r| r.starts_with("127.0.0.1:") && !r.contains("/")));
+    assert!(
+        meta_after
+            .replicas
+            .iter()
+            .all(|r| r.starts_with("127.0.0.1:") && !r.contains("/"))
+    );
     // Ensure we have two different replicas
     assert_ne!(meta_after.replicas[0], meta_after.replicas[1]);
 
@@ -319,7 +324,12 @@ async fn test_repair_destination_pre_check_avoids_unnecessary_copy() -> anyhow::
 
     assert_eq!(meta_after.replicas.len(), 2);
     // Check that replicas are URL-based node IDs (host:port format)
-    assert!(meta_after.replicas.iter().all(|r| r.starts_with("127.0.0.1:") && !r.contains("/")));
+    assert!(
+        meta_after
+            .replicas
+            .iter()
+            .all(|r| r.starts_with("127.0.0.1:") && !r.contains("/"))
+    );
     // Ensure we have two different replicas
     assert_ne!(meta_after.replicas[0], meta_after.replicas[1]);
 
