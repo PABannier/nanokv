@@ -62,7 +62,7 @@ async fn test_repair_fills_under_replication_to_n() -> anyhow::Result<()> {
 
     let args = RepairArgs {
         index: repair_db_path.clone(),
-        volumes: Some(vec![vol1.url().to_string(), vol2.url().to_string()]),
+        volumes: None,  // Use registry
         n_replicas: 2,
         concurrency: 8,
         concurrency_per_node: 2,
