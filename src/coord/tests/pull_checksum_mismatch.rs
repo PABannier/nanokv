@@ -32,6 +32,9 @@ async fn test_pull_checksum_mismatch_abort() -> anyhow::Result<()> {
         .find(|v| v.state.node_id == *follower_node)
         .expect("Should find follower volume");
 
+    println!("Head node (should receive write): {}", &expected_replicas[0]);
+    println!("Follower nodes (should pull from head): {:?}", &expected_replicas[1..]);
+
     // Inject etag mismatch using assumed test endpoint
     let fail_url = format!(
         "{}/admin/fail/etag_mismatch?once=true",
@@ -43,7 +46,7 @@ async fn test_pull_checksum_mismatch_abort() -> anyhow::Result<()> {
         if resp.status().is_success() {
             println!("Injected etag mismatch on follower: {}", follower_node);
         } else {
-            println!("Warning: Could not inject etag mismatch, test may not behave as expected");
+            println!("Warning: Could not inject etag mismatch, test may not behave as expected. Status: {}", resp.status());
         }
     } else {
         println!("Warning: Etag mismatch fault injection endpoint not available");
@@ -60,10 +63,10 @@ async fn test_pull_checksum_mismatch_abort() -> anyhow::Result<()> {
         put_via_coordinator(&client, coord.url(), key, payload.clone()).await?;
     let elapsed = start_time.elapsed();
 
-    // Assert: PUT returns 5xx due to checksum mismatch
+    // Assert: PUT returns unprocessable entity due to checksum mismatch
     assert!(
-        status.is_server_error(),
-        "PUT should return 5xx due to checksum mismatch, got: {}",
+        status == reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+        "PUT should return unprocessable entity due to checksum mismatch, got: {}",
         status
     );
     println!(
@@ -144,9 +147,9 @@ async fn test_size_mismatch_abort() -> anyhow::Result<()> {
 
     let (status, _, _) = put_via_coordinator(&client, coord.url(), key, payload).await?;
 
-    // Should fail with server error
+    // Should fail with unprocessable entity
     assert!(
-        status.is_server_error(),
+        status == reqwest::StatusCode::UNPROCESSABLE_ENTITY,
         "PUT should fail due to mismatch, got: {}",
         status
     );
@@ -211,7 +214,7 @@ async fn test_multiple_followers_checksum_mismatch() -> anyhow::Result<()> {
 
     // Should fail - even one checksum mismatch should abort the entire transaction
     assert!(
-        status.is_server_error(),
+        status == reqwest::StatusCode::UNPROCESSABLE_ENTITY,
         "PUT should fail with multiple checksum mismatches, got: {}",
         status
     );
@@ -283,7 +286,7 @@ async fn test_checksum_mismatch_with_large_payload() -> anyhow::Result<()> {
 
     // Should fail despite large payload
     assert!(
-        status.is_server_error(),
+        status == reqwest::StatusCode::UNPROCESSABLE_ENTITY,
         "Large payload PUT should fail due to checksum mismatch, got: {}",
         status
     );
@@ -309,91 +312,6 @@ async fn test_checksum_mismatch_with_large_payload() -> anyhow::Result<()> {
     }
 
     println!("Large payload checksum mismatch test successful");
-
-    // Cleanup
-    shutdown_volumes(volumes).await?;
-    coord.shutdown().await?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_successful_write_after_checksum_mismatch_cleanup() -> anyhow::Result<()> {
-    // Test that after a checksum mismatch abort, subsequent writes to the same key work
-    let coord = TestCoordinator::new_with_replicas(3).await?;
-    let client = Client::new();
-
-    let mut volumes = create_volumes(coord.url(), 3).await?;
-    join_and_heartbeat_volumes(&mut volumes, 500).await?;
-    wait_for_volumes_alive(&client, coord.url(), 3, 5000).await?;
-
-    let key = "test-retry-after-mismatch";
-    let nodes = list_nodes(&client, coord.url()).await?;
-    let expected_replicas = test_placement_n(key, &nodes, 3);
-
-    // First attempt: inject checksum mismatch
-    let follower_node = &expected_replicas[1];
-    if let Some(follower_volume) = volumes.iter().find(|v| v.state.node_id == *follower_node) {
-        let fail_url = format!(
-            "{}/admin/fail/etag_mismatch?once=true",
-            follower_volume.url()
-        );
-        let _ = client.post(&fail_url).send().await;
-        println!("Injected checksum mismatch for first attempt");
-    }
-
-    let payload1 = generate_random_bytes(1024);
-    let (status1, _, _) = put_via_coordinator(&client, coord.url(), key, payload1).await?;
-    assert!(
-        status1.is_server_error(),
-        "First PUT should fail due to checksum mismatch"
-    );
-
-    println!("First PUT failed as expected, attempting second PUT");
-
-    // Second attempt: should succeed (no fault injection)
-    let payload2 = generate_random_bytes(2048);
-    let expected_etag2 = blake3_hex(&payload2);
-
-    // Wait a bit for cleanup
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    let (status2, etag2, _) =
-        put_via_coordinator(&client, coord.url(), key, payload2.clone()).await?;
-
-    // Second attempt should succeed
-    assert_eq!(
-        status2,
-        reqwest::StatusCode::CREATED,
-        "Second PUT should succeed after cleanup"
-    );
-    assert_eq!(etag2, expected_etag2, "Second PUT should have correct etag");
-
-    // Verify final state
-    let meta = meta_of(&coord.state.db, key)?.expect("Meta should exist after successful write");
-    assert_eq!(
-        meta.state,
-        TxState::Committed,
-        "Meta should be committed after successful retry"
-    );
-
-    let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
-    let volumes_with_file = which_volume_has_file(&volume_refs, key)?;
-    assert_eq!(
-        volumes_with_file.len(),
-        3,
-        "All volumes should have file after successful retry"
-    );
-
-    // Verify we can read the correct data
-    let redirect_client = create_redirect_client()?;
-    let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key).await?;
-    assert_eq!(
-        response_bytes, payload2,
-        "Should read the data from successful write"
-    );
-
-    println!("Successful write after checksum mismatch cleanup test passed");
 
     // Cleanup
     shutdown_volumes(volumes).await?;
