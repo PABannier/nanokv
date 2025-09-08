@@ -247,8 +247,7 @@ pub mod pull {
                 .iter()
                 .map(|f| retry_pull(http, head, f, upload_id, expected_size, expected_etag)),
         )
-        .await
-        .map_err(|e| ApiError::Any(e.into()))?;
+        .await?;
         Ok(())
     }
 
@@ -319,7 +318,14 @@ pub mod pull {
                     )))
                 }
             }
-            Ok(_) => Err(ApiError::Any(anyhow!("failed to pull from head"))),
+            Ok(resp) => {
+                // Check for specific error statuses
+                if resp.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+                    Err(ApiError::ChecksumMismatch)
+                } else {
+                    Err(ApiError::UpstreamStatus(resp.status()))
+                }
+            }
             Err(e) => Err(ApiError::UpstreamReq(e)),
         }
     }
