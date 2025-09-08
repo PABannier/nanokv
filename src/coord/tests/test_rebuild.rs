@@ -11,7 +11,7 @@ use coord::core::meta::{KvDb, Meta, TxState};
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     // Setup: coordinator and 2 volumes with same blob A, no meta in DB
-    let coord = TestCoordinator::new().await?;
+    let coord = TestCoordinator::new_with_replicas(2).await?;
     let mut vol1 = TestVolume::new(coord.url().to_string(), "vol-1".to_string()).await?;
     let mut vol2 = TestVolume::new(coord.url().to_string(), "vol-2".to_string()).await?;
 
@@ -37,7 +37,7 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     let meta_key = meta_key_for(key_enc);
     coord.state.db.delete(&meta_key)?;
 
-    // Run rebuild with deep=false - use a separate DB for rebuild
+    // Run rebuild with deep=true - use a separate DB for rebuild
     let temp_dir = TempDir::new()?;
     let rebuild_db_path = temp_dir.path().join("rebuild_db");
 
@@ -45,7 +45,7 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
         index: rebuild_db_path.clone(),
         nodes: vec![vol1.url().to_string(), vol2.url().to_string()],
         dry_run: false,
-        deep: false,
+        deep: true,
         concurrency: 16,
         http_timeout_secs: 5,
     };
@@ -61,8 +61,10 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     assert_eq!(meta.state, TxState::Committed);
     assert_eq!(meta.size, size);
     assert_eq!(meta.replicas.len(), 2);
-    assert!(meta.replicas.contains(&"vol-1".to_string()));
-    assert!(meta.replicas.contains(&"vol-2".to_string()));
+    // Check that replicas are URL-based node IDs (host:port format)
+    assert!(meta.replicas.iter().all(|r| r.starts_with("127.0.0.1:") && r.ends_with("/")));
+    // Ensure we have two different replicas
+    assert_ne!(meta.replicas[0], meta.replicas[1]);
 
     vol1.shutdown().await?;
     vol2.shutdown().await?;
