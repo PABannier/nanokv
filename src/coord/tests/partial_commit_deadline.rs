@@ -5,6 +5,7 @@ use common::*;
 use coord::core::meta::TxState;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_commit_deadline_with_large_payload() -> anyhow::Result<()> {
     // Test commit deadline behavior with large payload
     let coord = TestCoordinator::new_with_replicas(3).await?;

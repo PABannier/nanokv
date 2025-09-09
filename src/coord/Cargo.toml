@@ -41,6 +41,9 @@ futures = "0.3.31"
 
 # Integration tests are auto-discovered in tests/ directory
 
+[features]
+heavy-tests = []
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"

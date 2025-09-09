@@ -108,6 +108,7 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_large_object_streaming() -> anyhow::Result<()> {
     // Start one Alive volume + coordinator
     let coord = TestCoordinator::new().await?;

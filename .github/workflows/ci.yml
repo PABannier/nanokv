@@ -51,4 +51,10 @@ jobs:
         env:
           RUST_BACKTRACE: 1
         run: cd src && cargo test --all --all-features --locked
+      
+      - name: test-heavy (optional)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          RUST_BACKTRACE: 1
+        run: cd src && cargo test --all --features heavy-tests --locked
 

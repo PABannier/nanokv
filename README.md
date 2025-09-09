@@ -231,7 +231,14 @@ Blob layout: `blobs/aa/bb/<key-enc>`, where aa and bb are the first two bytes of
 
 ### Run tests
 ```bash
+# Run regular tests (excludes heavy/resource-intensive tests)
 cargo test
+
+# Run all tests including heavy tests (large object streaming, etc.)
+cargo test --features heavy-tests
+
+# Run only heavy tests
+cargo test --features heavy-tests -- --ignored
 ```
 
 ### Lints & formatting
