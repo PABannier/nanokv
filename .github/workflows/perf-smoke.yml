@@ -29,9 +29,9 @@ jobs:
         run: |
           mkdir -p /tmp/vol1 /tmp/vol2 /tmp/indexdb
           # run your binaries; adapt flags to your CLI
-          ./target/release/volume --data /tmp/vol1 --port 3001 & echo $! > /tmp/v1.pid
-          ./target/release/volume --data /tmp/vol2 --port 3002 & echo $! > /tmp/v2.pid
-          ./target/release/coord serve --db /tmp/indexdb \
+          ./src/target/release/volume --data /tmp/vol1 --port 3001 & echo $! > /tmp/v1.pid
+          ./src/target/release/volume --data /tmp/vol2 --port 3002 & echo $! > /tmp/v2.pid
+          ./src/target/release/coord serve --db /tmp/indexdb \
             --volumes http://127.0.0.1:3001,http://127.0.0.1:3002 --replicas 2 \
             --port 3000 & echo $! > /tmp/c.pid
           sleep 2
@@ -45,7 +45,7 @@ jobs:
       - name: Run perf smoke
         id: k6
         run: |
-          k6 run bench/k6/coord_put_get.js \
+          k6 run bench/coord_put_get.js \
             --env BASE=http://127.0.0.1:3000 --env SIZE=1048576 --env VUS=16 --env DUR=30s \
             --summary-export perf.json || true
           cat perf.json
