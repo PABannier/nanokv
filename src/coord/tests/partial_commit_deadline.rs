@@ -4,7 +4,6 @@ mod common;
 use common::*;
 use coord::core::meta::TxState;
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_commit_deadline_with_large_payload() -> anyhow::Result<()> {
     // Test commit deadline behavior with large payload

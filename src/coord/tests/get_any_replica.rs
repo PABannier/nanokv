@@ -4,7 +4,6 @@ mod common;
 use common::*;
 use coord::core::node::NodeStatus;
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_get_with_multiple_nodes_down() -> anyhow::Result<()> {
     // Test GET still works when multiple replicas are down but at least one is alive
