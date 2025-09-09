@@ -1,0 +1,61 @@
+# .github/workflows/perf-smoke.yml
+name: perf-smoke
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Install LLVM/Clang if your build needs bindgen (fixes clang-sys errors)
+      - name: Install LLVM/Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-17-dev libclang-17-dev clang-17 pkg-config
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-17/bin/llvm-config" >> $GITHUB_ENV
+          echo "LIBCLANG_PATH=/usr/lib/llvm-17/lib" >> $GITHUB_ENV
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Start volumes + coordinator
+        run: |
+          mkdir -p /tmp/vol1 /tmp/vol2 /tmp/indexdb
+          # run your binaries; adapt flags to your CLI
+          ./target/release/volume --data /tmp/vol1 --port 3001 & echo $! > /tmp/v1.pid
+          ./target/release/volume --data /tmp/vol2 --port 3002 & echo $! > /tmp/v2.pid
+          ./target/release/coord serve --db /tmp/indexdb \
+            --volumes http://127.0.0.1:3001,http://127.0.0.1:3002 --replicas 2 \
+            --port 3000 & echo $! > /tmp/c.pid
+          sleep 2
+
+      - name: Install k6
+        run: |
+          curl -sSL https://github.com/grafana/k6/releases/download/v0.49.0/k6-v0.49.0-linux-amd64.tar.gz \
+          | tar xz
+          echo "$PWD/k6-v0.49.0-linux-amd64" >> $GITHUB_PATH
+
+      - name: Run perf smoke
+        id: k6
+        run: |
+          k6 run bench/k6/coord_put_get.js \
+            --env BASE=http://127.0.0.1:3000 --env SIZE=1048576 --env VUS=16 --env DUR=30s \
+            --summary-export perf.json || true
+          cat perf.json
+
+      - name: Upload perf artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke
+          path: perf.json
+
+      - name: Teardown
+        if: always()
+        run: kill $(cat /tmp/v1.pid) $(cat /tmp/v2.pid) $(cat /tmp/c.pid) || true
