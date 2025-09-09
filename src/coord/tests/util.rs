@@ -108,10 +108,7 @@ pub async fn read_blob(volume_root: &Path, key_enc: &str) -> Result<Vec<u8>> {
 
 /// Check if a blob exists in the volume's file system
 pub async fn blob_exists(volume_root: &Path, key_enc: &str) -> bool {
-    match read_blob(volume_root, key_enc).await {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    (read_blob(volume_root, key_enc).await).is_ok()
 }
 
 /// Assert a meta exists in the database with the given properties
@@ -148,8 +145,9 @@ pub struct FakeVolumeState {
     pub volume_root: PathBuf,
     pub node_id: String,
     pub options: Arc<Mutex<VolumeOptions>>,
+    #[allow(clippy::type_complexity)]
     pub temp_uploads: Arc<Mutex<HashMap<String, (u64, Vec<u8>)>>>, // upload_id -> (expected_size, content)
-    pub call_counts: Arc<Mutex<HashMap<String, usize>>>,           // endpoint -> count
+    pub call_counts: Arc<Mutex<HashMap<String, usize>>>, // endpoint -> count
 }
 
 impl FakeVolumeState {
@@ -284,7 +282,7 @@ pub async fn admin_list_handler(
         keys = entries[start_idx..end_idx].to_vec();
     }
 
-    let next_after = if keys.len() == limit && keys.len() > 0 {
+    let next_after = if keys.len() == limit && !keys.is_empty() {
         Some(keys.last().unwrap().clone())
     } else {
         None
@@ -339,15 +337,16 @@ pub async fn admin_blob_handler(
             // Apply corruption for testing
             {
                 let opts = state.options.lock().unwrap();
-                if let Some(corrupt_key) = &opts.corrupt_size_for_key {
-                    if query.key == *corrupt_key {
-                        size += 1; // Wrong size
-                    }
+                if let Some(corrupt_key) = &opts.corrupt_size_for_key
+                    && query.key == *corrupt_key
+                {
+                    size += 1; // Wrong size
                 }
-                if let Some(corrupt_key) = &opts.corrupt_etag_for_key {
-                    if query.key == *corrupt_key && deep {
-                        etag = Some("corrupt_etag".to_string());
-                    }
+                if let Some(corrupt_key) = &opts.corrupt_etag_for_key
+                    && query.key == *corrupt_key
+                    && deep
+                {
+                    etag = Some("corrupt_etag".to_string());
                 }
             }
 
@@ -542,12 +541,12 @@ async fn collect_blob_keys(start_dir: &Path, keys: &mut Vec<String>) {
             let path = entry.path();
             if path.is_dir() {
                 dirs_to_process.push(path);
-            } else if let Some(filename) = path.file_name() {
-                if let Some(key) = filename.to_str() {
-                    // Percent-encode the key
-                    let key_enc = utf8_percent_encode(key, NON_ALPHANUMERIC).to_string();
-                    keys.push(key_enc);
-                }
+            } else if let Some(filename) = path.file_name()
+                && let Some(key) = filename.to_str()
+            {
+                // Percent-encode the key
+                let key_enc = utf8_percent_encode(key, NON_ALPHANUMERIC).to_string();
+                keys.push(key_enc);
             }
         }
     }
