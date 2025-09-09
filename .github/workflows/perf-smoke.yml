@@ -23,7 +23,7 @@ jobs:
           echo "LIBCLANG_PATH=/usr/lib/llvm-17/lib" >> $GITHUB_ENV
 
       - name: Build
-        run: cargo build --release
+        run: cd src && cargo build --release
 
       - name: Start volumes + coordinator
         run: |
