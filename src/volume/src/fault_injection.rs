@@ -17,20 +17,24 @@ pub struct FaultInjector {
     // Prepare failures
     pub fail_prepare_once: AtomicBool,
     pub fail_prepare_always: AtomicBool,
+    pub fail_prepare_count: AtomicU64,
 
     // Pull failures
     pub fail_pull_once: AtomicBool,
     pub fail_pull_always: AtomicBool,
     pub fail_pull_mid_stream_once: AtomicBool,
+    pub fail_pull_count: AtomicU64,
 
     // Commit failures
     pub fail_commit_once: AtomicBool,
     pub fail_commit_always: AtomicBool,
     pub fail_commit_timeout_once: AtomicBool,
+    pub fail_commit_count: AtomicU64,
 
     // Read temp failures
     pub fail_read_tmp_once: AtomicBool,
     pub fail_read_tmp_always: AtomicBool,
+    pub fail_read_tmp_count: AtomicU64,
 
     // Etag mismatch
     pub fail_etag_mismatch_once: AtomicBool,
@@ -60,6 +64,12 @@ impl FaultInjector {
             return true;
         }
 
+        let count = self.fail_prepare_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_prepare_count.store(count - 1, Ordering::Relaxed);
+            return true;
+        }
+
         false
     }
 
@@ -71,6 +81,12 @@ impl FaultInjector {
 
         if self.fail_pull_once.load(Ordering::Relaxed) {
             self.fail_pull_once.store(false, Ordering::Relaxed);
+            return true;
+        }
+
+        let count = self.fail_pull_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_pull_count.store(count - 1, Ordering::Relaxed);
             return true;
         }
 
@@ -99,6 +115,12 @@ impl FaultInjector {
             return true;
         }
 
+        let count = self.fail_commit_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_commit_count.store(count - 1, Ordering::Relaxed);
+            return true;
+        }
+
         false
     }
 
@@ -121,6 +143,12 @@ impl FaultInjector {
 
         if self.fail_read_tmp_once.load(Ordering::Relaxed) {
             self.fail_read_tmp_once.store(false, Ordering::Relaxed);
+            return true;
+        }
+
+        let count = self.fail_read_tmp_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_read_tmp_count.store(count - 1, Ordering::Relaxed);
             return true;
         }
 
@@ -183,16 +211,20 @@ impl FaultInjector {
     pub fn reset(&self) {
         self.fail_prepare_once.store(false, Ordering::Relaxed);
         self.fail_prepare_always.store(false, Ordering::Relaxed);
+        self.fail_prepare_count.store(0, Ordering::Relaxed);
         self.fail_pull_once.store(false, Ordering::Relaxed);
         self.fail_pull_always.store(false, Ordering::Relaxed);
         self.fail_pull_mid_stream_once
             .store(false, Ordering::Relaxed);
+        self.fail_pull_count.store(0, Ordering::Relaxed);
         self.fail_commit_once.store(false, Ordering::Relaxed);
         self.fail_commit_always.store(false, Ordering::Relaxed);
         self.fail_commit_timeout_once
             .store(false, Ordering::Relaxed);
+        self.fail_commit_count.store(0, Ordering::Relaxed);
         self.fail_read_tmp_once.store(false, Ordering::Relaxed);
         self.fail_read_tmp_always.store(false, Ordering::Relaxed);
+        self.fail_read_tmp_count.store(0, Ordering::Relaxed);
         self.fail_etag_mismatch_once.store(false, Ordering::Relaxed);
         self.fail_etag_mismatch_always
             .store(false, Ordering::Relaxed);
@@ -208,6 +240,8 @@ pub struct FaultQuery {
     pub once: bool,
     #[serde(default)]
     pub always: bool,
+    #[serde(default)]
+    pub count: Option<u64>,
     #[serde(default)]
     pub latency_ms: Option<u64>,
 }
@@ -227,6 +261,11 @@ pub async fn fail_prepare(
         ctx.fault_injector
             .fail_prepare_always
             .store(true, Ordering::Relaxed);
+    }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_prepare_count
+            .store(count, Ordering::Relaxed);
     }
     Ok(StatusCode::OK)
 }
@@ -250,6 +289,11 @@ pub async fn fail_pull(
         ctx.fault_injector
             .fail_pull_always
             .store(true, Ordering::Relaxed);
+    }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_pull_count
+            .store(count, Ordering::Relaxed);
     }
     Ok(StatusCode::OK)
 }
@@ -277,6 +321,11 @@ pub async fn fail_commit(
             .fail_commit_always
             .store(true, Ordering::Relaxed);
     }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_commit_count
+            .store(count, Ordering::Relaxed);
+    }
     Ok(StatusCode::OK)
 }
 
@@ -295,6 +344,11 @@ pub async fn fail_read_tmp(
         ctx.fault_injector
             .fail_read_tmp_always
             .store(true, Ordering::Relaxed);
+    }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_read_tmp_count
+            .store(count, Ordering::Relaxed);
     }
     Ok(StatusCode::OK)
 }

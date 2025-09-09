@@ -222,8 +222,8 @@ async fn test_node_pause_during_pull_timeout() -> anyhow::Result<()> {
     // Inject read_tmp failure/timeout on head node to force pull timeouts
     let head_node = &expected_replicas[0];
     if let Some(head_volume) = volumes.iter().find(|v| v.state.node_id == *head_node) {
-        // Use multiple failures to simulate persistent timeout
-        let fail_url = format!("{}/admin/fail/read_tmp?count=10", head_volume.url());
+        // Use many failures to ensure retry budget is exhausted
+        let fail_url = format!("{}/admin/fail/read_tmp?count=50", head_volume.url());
         let _ = client.post(&fail_url).send().await;
         println!(
             "Injected persistent read_tmp failures on head: {}",
