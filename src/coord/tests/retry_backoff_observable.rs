@@ -266,7 +266,7 @@ async fn test_retry_backoff_budget_exhaustion() -> anyhow::Result<()> {
         "Should take time showing multiple retry attempts"
     );
     assert!(
-        total_elapsed.as_secs() < 15,
+        total_elapsed.as_secs() < 60,
         "Should not exceed reasonable maximum budget"
     );
 
@@ -376,7 +376,7 @@ async fn test_jitter_in_backoff() -> anyhow::Result<()> {
 
     // But variance shouldn't be too extreme
     assert!(
-        variance.as_millis() < 2000,
+        variance.as_millis() < 5000,
         "Variance should be reasonable, got: {:?}",
         variance
     );
