@@ -2,14 +2,14 @@ use axum::extract::{Path, State};
 use serde::Serialize;
 
 use crate::core::state::CoordinatorState;
-use common::api_error::ApiError;
+use common::error::ApiError;
 
 #[cfg(test)]
 use crate::core::placement::choose_top_n_alive;
 #[cfg(test)]
 use anyhow::anyhow;
 #[cfg(test)]
-use common::file_utils::sanitize_key;
+use common::key_utils::Key;
 
 #[derive(Serialize)]
 pub struct PlacementResponse {
@@ -25,7 +25,8 @@ pub async fn debug_placement(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
 ) -> Result<axum::Json<PlacementResponse>, ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let key_enc = key.enc();
 
     // Get the replicas in HRW order (same logic as PUT)
     let nodes = ctx
@@ -35,7 +36,7 @@ pub async fn debug_placement(
         .values()
         .map(|v| v.info.clone())
         .collect::<Vec<_>>();
-    let replicas = choose_top_n_alive(&nodes, &key_enc, ctx.n_replicas);
+    let replicas = choose_top_n_alive(&nodes, key_enc, ctx.n_replicas);
 
     let node_ids: Vec<String> = replicas
         .iter()

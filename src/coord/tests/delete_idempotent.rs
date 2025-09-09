@@ -1,7 +1,7 @@
 use reqwest::Client;
 
 mod common;
-use ::common::file_utils;
+use ::common::key_utils;
 use common::*;
 use coord::core::meta::{Meta, TxState};
 use coord::core::node::NodeStatus;
@@ -34,7 +34,9 @@ async fn test_delete_idempotent() -> anyhow::Result<()> {
     assert_eq!(status1, reqwest::StatusCode::NO_CONTENT);
 
     // Verify meta becomes Tombstoned
-    let meta_key = file_utils::meta_key_for("delete%2Dtest");
+    let key = key_utils::Key::from_percent_encoded("delete-test").unwrap();
+    let key_enc = key.enc();
+    let meta_key = key_utils::meta_key_for(key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some(), "Meta should exist after delete");
 
@@ -119,7 +121,9 @@ async fn test_volume_delete_idempotent() -> anyhow::Result<()> {
 
     // Now directly call volume's delete endpoint (this simulates the coordinator
     // calling it again or some other scenario where the same delete is attempted)
-    let vol_delete_url = format!("{}/internal/delete/vol%2Ddelete%2Dtest", volume.url());
+    let key = key_utils::Key::from_percent_encoded("vol-delete-test").unwrap();
+    let key_enc = key.enc();
+    let vol_delete_url = format!("{}/internal/delete/{}", volume.url(), key_enc);
     let resp = client.delete(&vol_delete_url).send().await?;
 
     // Volume should return 204 even if file was already missing (idempotent)

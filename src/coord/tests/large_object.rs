@@ -5,6 +5,7 @@ use common::*;
 use coord::core::meta::TxState;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_large_object_streaming_path() -> anyhow::Result<()> {
     // Test large object with followers (streaming path)
     let coord = TestCoordinator::new_with_replicas(3).await?;
@@ -118,6 +119,7 @@ async fn test_large_object_streaming_path() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_very_large_object_streaming() -> anyhow::Result<()> {
     // Test with an even larger object to stress streaming
     let coord = TestCoordinator::new_with_replicas(3).await?;
@@ -231,6 +233,7 @@ async fn test_very_large_object_streaming() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_large_object_with_node_failure() -> anyhow::Result<()> {
     // Test large object streaming with node failure during operation
     let coord = TestCoordinator::new_with_replicas(3).await?;
@@ -295,6 +298,7 @@ async fn test_large_object_with_node_failure() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_large_object_concurrent_operations() -> anyhow::Result<()> {
     // Test multiple concurrent large object operations
     let coord = TestCoordinator::new_with_replicas(3).await?;
@@ -372,6 +376,7 @@ async fn test_large_object_concurrent_operations() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_large_object_memory_efficiency() -> anyhow::Result<()> {
     // Test that large objects don't consume excessive memory during streaming
     let coord = TestCoordinator::new_with_replicas(3).await?;

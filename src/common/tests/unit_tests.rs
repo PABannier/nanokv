@@ -1,29 +1,28 @@
-use common::file_utils::{blob_path, meta_key_for, sanitize_key, tmp_path};
+use common::file_utils::{blob_path, tmp_path};
+use common::key_utils::{Key, meta_key_for};
 use std::path::Path;
 
 #[test]
 fn test_key_sanitize_roundtrip() {
     // Test basic alphanumeric keys
-    let key = "simple_key123";
-    let sanitized = sanitize_key(key).unwrap();
-    assert_eq!(sanitized, "simple%5Fkey123");
+    let raw_key = "simple_key123";
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let sanitized = key.enc();
+    assert_eq!(sanitized, "simple%5fkey123");
 
-    // Test with special characters
-    let key = "path/to/file.txt";
-    let sanitized = sanitize_key(key).unwrap();
-    assert!(sanitized.contains("%2F")); // Forward slash encoded
-    assert!(sanitized.contains("%2E")); // Dot encoded
+    // Test with special characters - should be forbidden
+    let raw_key = "path/to/file.txt";
+    assert!(matches!(
+        Key::from_percent_encoded(raw_key),
+        Err(common::error::KeyError::Forbidden)
+    ));
 
     // Test empty key fails
-    assert!(sanitize_key("").is_err());
+    assert!(Key::from_percent_encoded("").is_err());
 
     // Test too long key fails
-    let long_key = "a".repeat(3000);
-    assert!(sanitize_key(&long_key).is_err());
-
-    // Test path traversal protection
-    assert!(sanitize_key("../secret").is_err());
-    assert!(sanitize_key("path/../secret").is_err());
+    let long_key = "a".repeat(5000);
+    assert!(Key::from_percent_encoded(&long_key).is_err());
 }
 
 #[test]

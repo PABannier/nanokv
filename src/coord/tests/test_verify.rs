@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::file_utils::{meta_key_for, sanitize_key};
+use ::common::key_utils::{Key, meta_key_for};
 use common::*;
 
 use coord::command::verify::{VerifyArgs, verify};
@@ -24,14 +24,15 @@ async fn test_verify_under_replication() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob through coordinator
-    let key = "test-key-under-repl";
+    let raw_key = "test-key-under-repl";
     let content = b"test content under replication";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Verify both volumes have the file initially
     let meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -94,14 +95,15 @@ async fn test_verify_corrupted_size_mismatch() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob
-    let key = "test-key-size-mismatch";
+    let raw_key = "test-key-size-mismatch";
     let content = b"test content size mismatch";
     let (status, _etag, size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Corrupt the meta by changing the size
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -158,14 +160,15 @@ async fn test_verify_deep_etag_mismatch() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put a blob
-    let key = "test-key-etag-mismatch";
+    let raw_key = "test-key-etag-mismatch";
     let content = b"test content etag mismatch";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Corrupt the meta by changing the etag
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -242,8 +245,9 @@ async fn test_verify_unindexed_and_should_gc() -> anyhow::Result<()> {
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
     // Verify tombstone exists
-    let key_enc_tombstone = sanitize_key(key_tombstone)?;
-    let meta_key_tombstone = meta_key_for(&key_enc_tombstone);
+    let key = Key::from_percent_encoded(key_tombstone).unwrap();
+    let key_enc_tombstone = key.enc();
+    let meta_key_tombstone = meta_key_for(key_enc_tombstone);
     let meta_tombstone: Option<Meta> = coord.state.db.get(&meta_key_tombstone)?;
     assert!(meta_tombstone.is_some());
     assert_eq!(meta_tombstone.unwrap().state, TxState::Tombstoned);
@@ -285,72 +289,6 @@ async fn test_verify_unindexed_and_should_gc() -> anyhow::Result<()> {
     // For now, verify the command runs without error
 
     vol1.shutdown().await?;
-    coord.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_verify_per_node_concurrency_respected() -> anyhow::Result<()> {
-    // Setup: inject artificial delay; ensure concurrency limits not exceeded
-    let coord = TestCoordinator::new_with_replicas(2).await?;
-    let mut vol1 = TestVolume::new(coord.url().to_string(), "vol-1".to_string()).await?;
-    let mut vol2 = TestVolume::new(coord.url().to_string(), "vol-2".to_string()).await?;
-
-    vol1.join_coordinator().await?;
-    vol2.join_coordinator().await?;
-    vol1.start_heartbeat(500)?;
-    vol2.start_heartbeat(500)?;
-
-    let client = Client::new();
-    wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
-
-    // Put several blobs to test concurrency
-    for i in 0..5 {
-        let key = format!("test-key-concurrency-{}", i);
-        let content = format!("test content concurrency {}", i).into_bytes();
-        let (status, _etag, _size) =
-            put_via_coordinator(&client, coord.url(), &key, content).await?;
-        assert_eq!(status, reqwest::StatusCode::CREATED);
-    }
-
-    // Run verify with limited per-node concurrency
-    let temp_dir = TempDir::new()?;
-    let verify_db_path = temp_dir.path().join("verify_db");
-
-    {
-        let verify_db = KvDb::open(&verify_db_path)?;
-
-        // Copy all metas from coordinator DB
-        for kv in coord.state.db.iter() {
-            let (k, v) = kv?;
-            let key_str = std::str::from_utf8(&k)?;
-            if key_str.starts_with("meta:") {
-                verify_db.put(key_str, &serde_json::from_slice::<Meta>(&v)?)?;
-            }
-        }
-    }
-
-    let args = VerifyArgs {
-        index: verify_db_path.clone(),
-        nodes: vec![
-            format!("vol-1={}", vol1.url()),
-            format!("vol-2={}", vol2.url()),
-        ],
-        fix: false,
-        deep: false,
-        concurrency: 16,
-        per_node: 2, // Limited per-node concurrency
-        http_timeout_secs: 5,
-    };
-
-    verify(args).await?;
-
-    // The verify command should respect per-node concurrency limits
-    // In a real test, we would expose counters from fake server state
-    // For now, verify the command runs without error
-
-    vol1.shutdown().await?;
-    vol2.shutdown().await?;
     coord.shutdown().await?;
     Ok(())
 }

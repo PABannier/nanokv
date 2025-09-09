@@ -23,8 +23,8 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
 
-use common::api_error::ApiError;
-use common::file_utils::meta_key_for;
+use common::error::ApiError;
+use common::key_utils::meta_key_for;
 use common::schemas::{BlobHead, ListResponse, SweepTmpResponse};
 use common::time_utils::utc_now_ms;
 use common::url_utils::node_id_from_url;
@@ -108,10 +108,7 @@ pub async fn read_blob(volume_root: &Path, key_enc: &str) -> Result<Vec<u8>> {
 
 /// Check if a blob exists in the volume's file system
 pub async fn blob_exists(volume_root: &Path, key_enc: &str) -> bool {
-    match read_blob(volume_root, key_enc).await {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    (read_blob(volume_root, key_enc).await).is_ok()
 }
 
 /// Assert a meta exists in the database with the given properties
@@ -148,8 +145,9 @@ pub struct FakeVolumeState {
     pub volume_root: PathBuf,
     pub node_id: String,
     pub options: Arc<Mutex<VolumeOptions>>,
+    #[allow(clippy::type_complexity)]
     pub temp_uploads: Arc<Mutex<HashMap<String, (u64, Vec<u8>)>>>, // upload_id -> (expected_size, content)
-    pub call_counts: Arc<Mutex<HashMap<String, usize>>>,           // endpoint -> count
+    pub call_counts: Arc<Mutex<HashMap<String, usize>>>, // endpoint -> count
 }
 
 impl FakeVolumeState {
@@ -176,21 +174,21 @@ impl FakeVolumeState {
 
 /// Query parameters for /admin/list
 #[derive(Deserialize)]
-struct AdminListQuery {
+pub struct AdminListQuery {
     limit: Option<usize>,
     after: Option<String>,
 }
 
 /// Query parameters for /admin/blob
 #[derive(Deserialize)]
-struct AdminBlobQuery {
+pub struct AdminBlobQuery {
     key: String,
     deep: Option<String>,
 }
 
 /// Query parameters for /internal/prepare
 #[derive(Deserialize)]
-struct InternalPrepareQuery {
+pub struct InternalPrepareQuery {
     key: String,
     upload_id: String,
     expected_size: Option<u64>,
@@ -198,27 +196,27 @@ struct InternalPrepareQuery {
 
 /// Query parameters for /internal/pull
 #[derive(Deserialize)]
-struct InternalPullQuery {
+pub struct InternalPullQuery {
     upload_id: String,
     from: String, // Source URL or direct content injection
 }
 
 /// Query parameters for /internal/commit
 #[derive(Deserialize)]
-struct InternalCommitQuery {
+pub struct InternalCommitQuery {
     upload_id: String,
     key: String,
 }
 
 /// Query parameters for /internal/delete
 #[derive(Deserialize)]
-struct InternalDeleteQuery {
+pub struct InternalDeleteQuery {
     key: String,
 }
 
 /// Response for /internal/pull
 #[derive(Serialize)]
-struct PullResponse {
+pub struct PullResponse {
     size: u64,
     etag: String,
 }
@@ -284,7 +282,7 @@ pub async fn admin_list_handler(
         keys = entries[start_idx..end_idx].to_vec();
     }
 
-    let next_after = if keys.len() == limit && keys.len() > 0 {
+    let next_after = if keys.len() == limit && !keys.is_empty() {
         Some(keys.last().unwrap().clone())
     } else {
         None
@@ -339,15 +337,16 @@ pub async fn admin_blob_handler(
             // Apply corruption for testing
             {
                 let opts = state.options.lock().unwrap();
-                if let Some(corrupt_key) = &opts.corrupt_size_for_key {
-                    if query.key == *corrupt_key {
-                        size += 1; // Wrong size
-                    }
+                if let Some(corrupt_key) = &opts.corrupt_size_for_key
+                    && query.key == *corrupt_key
+                {
+                    size += 1; // Wrong size
                 }
-                if let Some(corrupt_key) = &opts.corrupt_etag_for_key {
-                    if query.key == *corrupt_key && deep {
-                        etag = Some("corrupt_etag".to_string());
-                    }
+                if let Some(corrupt_key) = &opts.corrupt_etag_for_key
+                    && query.key == *corrupt_key
+                    && deep
+                {
+                    etag = Some("corrupt_etag".to_string());
                 }
             }
 
@@ -528,30 +527,29 @@ pub async fn admin_sweep_tmp_handler(
     }))
 }
 
-// Helper function to recursively collect blob keys
-fn collect_blob_keys<'a>(
-    dir: &'a Path,
-    keys: &'a mut Vec<String>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
-    Box::pin(async move {
-        let mut read_dir = match fs::read_dir(dir).await {
+// Helper function to collect blob keys iteratively
+async fn collect_blob_keys(start_dir: &Path, keys: &mut Vec<String>) {
+    let mut dirs_to_process = vec![start_dir.to_path_buf()];
+
+    while let Some(dir) = dirs_to_process.pop() {
+        let mut read_dir = match fs::read_dir(&dir).await {
             Ok(rd) => rd,
-            Err(_) => return,
+            Err(_) => continue,
         };
 
         while let Ok(Some(entry)) = read_dir.next_entry().await {
             let path = entry.path();
             if path.is_dir() {
-                collect_blob_keys(&path, keys).await;
-            } else if let Some(filename) = path.file_name() {
-                if let Some(key) = filename.to_str() {
-                    // Percent-encode the key
-                    let key_enc = utf8_percent_encode(key, NON_ALPHANUMERIC).to_string();
-                    keys.push(key_enc);
-                }
+                dirs_to_process.push(path);
+            } else if let Some(filename) = path.file_name()
+                && let Some(key) = filename.to_str()
+            {
+                // Percent-encode the key
+                let key_enc = utf8_percent_encode(key, NON_ALPHANUMERIC).to_string();
+                keys.push(key_enc);
             }
         }
-    })
+    }
 }
 
 /// Handle for a fake volume server

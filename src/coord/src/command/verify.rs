@@ -13,7 +13,7 @@ use tracing::{info, warn};
 use url::Url;
 
 use common::constants::META_KEY_PREFIX;
-use common::file_utils::meta_key_for;
+use common::key_utils::{get_key_enc_from_meta_key, meta_key_for};
 use common::schemas::{BlobHead, ListResponse};
 
 use crate::core::meta::{KvDb, Meta, TxState};
@@ -162,10 +162,7 @@ async fn walk_db(
         if !k.starts_with(META_KEY_PREFIX.as_bytes()) {
             continue;
         }
-        let key_enc = std::str::from_utf8(&k)?
-            .strip_prefix(META_KEY_PREFIX)
-            .unwrap()
-            .to_string();
+        let key_enc = get_key_enc_from_meta_key(std::str::from_utf8(&k)?);
         let meta: Meta = serde_json::from_slice(&v)?;
         if !matches!(meta.state, TxState::Committed) {
             continue;

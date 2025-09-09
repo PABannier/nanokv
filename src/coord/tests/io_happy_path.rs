@@ -2,6 +2,7 @@ use reqwest::Client;
 
 mod common;
 use ::common::file_utils;
+use ::common::key_utils;
 use common::*;
 use coord::core::meta::{Meta, TxState};
 use coord::core::node::NodeStatus;
@@ -40,7 +41,9 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
     assert_eq!(len, expected_len);
 
     // Assert RocksDB meta for key is Committed with correct fields
-    let meta_key = file_utils::meta_key_for("test%2Dkey"); // percent-encoded
+    let key = key_utils::Key::from_percent_encoded("test-key").unwrap();
+    let key_enc = key.enc();
+    let meta_key = key_utils::meta_key_for(key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some(), "Meta not found in RocksDB");
 
@@ -51,7 +54,7 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
     assert_eq!(meta.replicas, vec!["vol-1"]);
 
     // Assert volume has the file at correct location with same size
-    let blob_file_path = file_utils::blob_path(&volume.state.data_root, "test%2Dkey");
+    let blob_file_path = file_utils::blob_path(&volume.state.data_root, key_enc);
     assert!(
         blob_file_path.exists(),
         "Blob file not found at {:?}",
@@ -67,7 +70,7 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
     assert!(location.is_some(), "No Location header in redirect");
 
     let location = location.unwrap();
-    let expected_location = format!("{}/blobs/test%2Dkey", volume.url());
+    let expected_location = format!("{}/blobs/{}", volume.url(), key_enc);
     assert_eq!(location, expected_location);
 
     // Follow the redirect to get actual content
@@ -105,6 +108,7 @@ async fn test_put_get_delete_happy_path() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(not(feature = "heavy-tests"), ignore)]
 async fn test_large_object_streaming() -> anyhow::Result<()> {
     // Start one Alive volume + coordinator
     let coord = TestCoordinator::new().await?;

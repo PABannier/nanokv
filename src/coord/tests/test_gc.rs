@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::file_utils::{meta_key_for, sanitize_key};
+use ::common::key_utils::{Key, meta_key_for};
 use ::common::time_utils::utc_now_ms;
 use common::*;
 
@@ -28,17 +28,18 @@ async fn test_gc_deletes_tombstones_past_ttl_default_target() -> anyhow::Result<
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put and delete a blob to create tombstone
-    let key = "test-key-gc-tombstone";
+    let raw_key = "test-key-gc-tombstone";
     let content = b"test content gc tombstone";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Verify tombstone exists
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -115,17 +116,18 @@ async fn test_gc_broadcast_deletes() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 2, 3000).await?;
 
     // Put and delete a blob
-    let key = "test-key-gc-broadcast";
+    let raw_key = "test-key-gc-broadcast";
     let content = b"test content gc broadcast";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Make tombstone old
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -195,17 +197,18 @@ async fn test_gc_purge_metas() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
 
     // Put and delete a blob
-    let key = "test-key-gc-purge-meta";
+    let raw_key = "test-key-gc-purge-meta";
     let content = b"test content gc purge meta";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Make tombstone old
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();
@@ -478,17 +481,18 @@ async fn test_gc_dry_run() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
 
     // Put and delete a blob to create tombstone
-    let key = "test-key-gc-dry-run";
+    let raw_key = "test-key-gc-dry-run";
     let content = b"test content gc dry run";
     let (status, _etag, _size) =
-        put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
 
     // Make tombstone old
     let mut meta: Meta = coord.state.db.get(&meta_key)?.unwrap();

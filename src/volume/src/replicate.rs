@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use serde::Deserialize;
 use tokio::fs::File;
 
-use common::api_error::ApiError;
+use common::error::ApiError;
 use common::file_utils::stream_to_file_with_hash;
 
 use crate::state::VolumeState;

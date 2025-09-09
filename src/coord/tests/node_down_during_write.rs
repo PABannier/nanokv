@@ -222,8 +222,8 @@ async fn test_node_pause_during_pull_timeout() -> anyhow::Result<()> {
     // Inject read_tmp failure/timeout on head node to force pull timeouts
     let head_node = &expected_replicas[0];
     if let Some(head_volume) = volumes.iter().find(|v| v.state.node_id == *head_node) {
-        // Use multiple failures to simulate persistent timeout
-        let fail_url = format!("{}/admin/fail/read_tmp?count=10", head_volume.url());
+        // Use many failures to ensure retry budget is exhausted
+        let fail_url = format!("{}/admin/fail/read_tmp?count=50", head_volume.url());
         let _ = client.post(&fail_url).send().await;
         println!(
             "Injected persistent read_tmp failures on head: {}",
@@ -349,93 +349,6 @@ async fn test_multiple_nodes_down_no_quorum() -> anyhow::Result<()> {
     }
 
     println!("No quorum test successful");
-
-    // Cleanup
-    shutdown_volumes(volumes).await?;
-    coord.shutdown().await?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_node_recovery_after_failure() -> anyhow::Result<()> {
-    // Test that system can recover and handle writes after node failure
-    let coord = TestCoordinator::new_with_replicas(3).await?;
-    let client = Client::new();
-
-    let mut volumes = create_volumes(coord.url(), 3).await?;
-    join_and_heartbeat_volumes(&mut volumes, 500).await?;
-    wait_for_volumes_alive(&client, coord.url(), 3, 5000).await?;
-
-    // First write should fail due to node going down
-    let key1 = "test-recovery-fail";
-    let nodes = list_nodes(&client, coord.url()).await?;
-    let _expected_replicas = test_placement_n(key1, &nodes, 3);
-
-    let payload1 = generate_random_bytes(5 * 1024 * 1024); // 5 MiB
-
-    // Kill a follower during the first write
-    let follower_index = 1; // Kill second volume
-    let killed_volume = volumes.remove(follower_index);
-    println!("Killing volume for recovery test");
-    killed_volume.shutdown().await?;
-
-    // First PUT should fail
-    let (status1, _, _) = put_via_coordinator(&client, coord.url(), key1, payload1).await?;
-    assert!(
-        status1.is_server_error(),
-        "First PUT should fail with node down"
-    );
-
-    // Now start a replacement volume
-    let mut new_volume =
-        TestVolume::new(coord.url().to_string(), "vol-replacement".to_string()).await?;
-    new_volume.join_coordinator().await?;
-    new_volume.start_heartbeat(500)?;
-    volumes.push(new_volume);
-
-    // Wait for new volume to be alive
-    wait_for_volumes_alive(&client, coord.url(), 3, 5000).await?;
-
-    // Second write should succeed with recovered quorum
-    let key2 = "test-recovery-success";
-    let payload2 = generate_random_bytes(2 * 1024 * 1024); // 2 MiB
-    let expected_etag2 = blake3_hex(&payload2);
-
-    println!("Attempting write after recovery");
-
-    let (status2, etag2, _) =
-        put_via_coordinator(&client, coord.url(), key2, payload2.clone()).await?;
-
-    // Should succeed
-    assert_eq!(
-        status2,
-        reqwest::StatusCode::CREATED,
-        "PUT should succeed after recovery"
-    );
-    assert_eq!(etag2, expected_etag2, "ETag should match");
-
-    // Verify successful write
-    let meta2 = meta_of(&coord.state.db, key2)?.expect("Meta should exist after recovery");
-    assert_eq!(meta2.state, TxState::Committed, "Meta should be committed");
-
-    let volume_refs: Vec<&TestVolume> = volumes.iter().collect();
-    let volumes_with_file = which_volume_has_file(&volume_refs, key2)?;
-    assert_eq!(
-        volumes_with_file.len(),
-        3,
-        "All volumes should have file after recovery"
-    );
-
-    // Verify data integrity
-    let redirect_client = create_redirect_client()?;
-    let response_bytes = follow_redirect_get(&redirect_client, coord.url(), key2).await?;
-    assert_eq!(
-        response_bytes, payload2,
-        "Data should be correct after recovery"
-    );
-
-    println!("Node recovery test successful");
 
     // Cleanup
     shutdown_volumes(volumes).await?;

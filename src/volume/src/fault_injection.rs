@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::state::VolumeState;
-use common::api_error::ApiError;
+use common::error::ApiError;
 
 /// Fault injection state for testing
 #[derive(Debug, Default)]
@@ -17,20 +17,24 @@ pub struct FaultInjector {
     // Prepare failures
     pub fail_prepare_once: AtomicBool,
     pub fail_prepare_always: AtomicBool,
+    pub fail_prepare_count: AtomicU64,
 
     // Pull failures
     pub fail_pull_once: AtomicBool,
     pub fail_pull_always: AtomicBool,
     pub fail_pull_mid_stream_once: AtomicBool,
+    pub fail_pull_count: AtomicU64,
 
     // Commit failures
     pub fail_commit_once: AtomicBool,
     pub fail_commit_always: AtomicBool,
     pub fail_commit_timeout_once: AtomicBool,
+    pub fail_commit_count: AtomicU64,
 
     // Read temp failures
     pub fail_read_tmp_once: AtomicBool,
     pub fail_read_tmp_always: AtomicBool,
+    pub fail_read_tmp_count: AtomicU64,
 
     // Etag mismatch
     pub fail_etag_mismatch_once: AtomicBool,
@@ -60,6 +64,12 @@ impl FaultInjector {
             return true;
         }
 
+        let count = self.fail_prepare_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_prepare_count.store(count - 1, Ordering::Relaxed);
+            return true;
+        }
+
         false
     }
 
@@ -71,6 +81,12 @@ impl FaultInjector {
 
         if self.fail_pull_once.load(Ordering::Relaxed) {
             self.fail_pull_once.store(false, Ordering::Relaxed);
+            return true;
+        }
+
+        let count = self.fail_pull_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_pull_count.store(count - 1, Ordering::Relaxed);
             return true;
         }
 
@@ -99,6 +115,12 @@ impl FaultInjector {
             return true;
         }
 
+        let count = self.fail_commit_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_commit_count.store(count - 1, Ordering::Relaxed);
+            return true;
+        }
+
         false
     }
 
@@ -121,6 +143,12 @@ impl FaultInjector {
 
         if self.fail_read_tmp_once.load(Ordering::Relaxed) {
             self.fail_read_tmp_once.store(false, Ordering::Relaxed);
+            return true;
+        }
+
+        let count = self.fail_read_tmp_count.load(Ordering::Relaxed);
+        if count > 0 {
+            self.fail_read_tmp_count.store(count - 1, Ordering::Relaxed);
             return true;
         }
 
@@ -183,16 +211,20 @@ impl FaultInjector {
     pub fn reset(&self) {
         self.fail_prepare_once.store(false, Ordering::Relaxed);
         self.fail_prepare_always.store(false, Ordering::Relaxed);
+        self.fail_prepare_count.store(0, Ordering::Relaxed);
         self.fail_pull_once.store(false, Ordering::Relaxed);
         self.fail_pull_always.store(false, Ordering::Relaxed);
         self.fail_pull_mid_stream_once
             .store(false, Ordering::Relaxed);
+        self.fail_pull_count.store(0, Ordering::Relaxed);
         self.fail_commit_once.store(false, Ordering::Relaxed);
         self.fail_commit_always.store(false, Ordering::Relaxed);
         self.fail_commit_timeout_once
             .store(false, Ordering::Relaxed);
+        self.fail_commit_count.store(0, Ordering::Relaxed);
         self.fail_read_tmp_once.store(false, Ordering::Relaxed);
         self.fail_read_tmp_always.store(false, Ordering::Relaxed);
+        self.fail_read_tmp_count.store(0, Ordering::Relaxed);
         self.fail_etag_mismatch_once.store(false, Ordering::Relaxed);
         self.fail_etag_mismatch_always
             .store(false, Ordering::Relaxed);
@@ -209,11 +241,13 @@ pub struct FaultQuery {
     #[serde(default)]
     pub always: bool,
     #[serde(default)]
+    pub count: Option<u64>,
+    #[serde(default)]
     pub latency_ms: Option<u64>,
 }
 
 /// POST /admin/fail/prepare?once=true -> next prepare returns 500.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_prepare(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -228,11 +262,16 @@ pub async fn fail_prepare(
             .fail_prepare_always
             .store(true, Ordering::Relaxed);
     }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_prepare_count
+            .store(count, Ordering::Relaxed);
+    }
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/fail/pull?once=true -> next pull returns 500 mid-stream.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_pull(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -251,11 +290,16 @@ pub async fn fail_pull(
             .fail_pull_always
             .store(true, Ordering::Relaxed);
     }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_pull_count
+            .store(count, Ordering::Relaxed);
+    }
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/fail/commit?once=true -> next commit returns 500 or times out.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_commit(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -277,11 +321,16 @@ pub async fn fail_commit(
             .fail_commit_always
             .store(true, Ordering::Relaxed);
     }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_commit_count
+            .store(count, Ordering::Relaxed);
+    }
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/fail/read_tmp?once=true -> next read_tmp returns 500.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_read_tmp(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -296,11 +345,16 @@ pub async fn fail_read_tmp(
             .fail_read_tmp_always
             .store(true, Ordering::Relaxed);
     }
+    if let Some(count) = params.count {
+        ctx.fault_injector
+            .fail_read_tmp_count
+            .store(count, Ordering::Relaxed);
+    }
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/fail/etag_mismatch?once=true -> next pull reports wrong etag.
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn fail_etag_mismatch(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -319,7 +373,7 @@ pub async fn fail_etag_mismatch(
 }
 
 /// POST /admin/inject/latency?latency_ms=1000 -> inject latency into all operations
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn inject_latency(
     Query(params): Query<FaultQuery>,
     State(ctx): State<VolumeState>,
@@ -333,35 +387,35 @@ pub async fn inject_latency(
 }
 
 /// POST /admin/pause -> pause all volume operations
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn pause_server(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.is_paused.store(true, Ordering::Relaxed);
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/resume -> resume all volume operations
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn resume_server(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.is_paused.store(false, Ordering::Relaxed);
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/kill -> kill the volume server (simulate crash)
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn kill_server(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.is_killed.store(true, Ordering::Relaxed);
     Ok(StatusCode::OK)
 }
 
 /// POST /admin/reset -> reset all fault injection flags
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub async fn reset_faults(State(ctx): State<VolumeState>) -> Result<StatusCode, ApiError> {
     ctx.fault_injector.reset();
     Ok(StatusCode::OK)
 }
 
 // Non-test stubs that return errors
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_prepare(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -371,7 +425,7 @@ pub async fn fail_prepare(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_pull(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -381,7 +435,7 @@ pub async fn fail_pull(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_commit(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -391,7 +445,7 @@ pub async fn fail_commit(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_read_tmp(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -401,7 +455,7 @@ pub async fn fail_read_tmp(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn fail_etag_mismatch(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -411,7 +465,7 @@ pub async fn fail_etag_mismatch(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn inject_latency(
     _: Query<FaultQuery>,
     _: State<VolumeState>,
@@ -421,28 +475,28 @@ pub async fn inject_latency(
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn pause_server(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn resume_server(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn kill_server(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"
     )))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, debug_assertions)))]
 pub async fn reset_faults(_: State<VolumeState>) -> Result<StatusCode, ApiError> {
     Err(ApiError::Any(anyhow::anyhow!(
         "Fault injection only available in test builds"

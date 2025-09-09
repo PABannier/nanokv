@@ -1,5 +1,6 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use reqwest::Client;
+use url::Url;
 use uuid::Uuid;
 
 use common::constants::NODE_KEY_PREFIX;
@@ -64,8 +65,14 @@ pub async fn probe_matches(
     etag: &str,
     size: u64,
 ) -> Result<bool> {
-    let url = format!("{}/admin/blob?key={}", node.internal_url, key_enc);
-    let r = http.get(&url).send().await?.error_for_status()?;
+    let mut url = Url::parse(&node.internal_url)
+        .with_context(|| format!("bad URL for node {}: {}", node.node_id, node.internal_url))?;
+    url.set_path("/admin/blob");
+    url.query_pairs_mut()
+        .append_pair("key", key_enc)
+        .append_pair("deep", "true");
+
+    let r = http.get(url.clone()).send().await?.error_for_status()?;
     let h: BlobHead = r.json().await?;
     Ok(h.exists && h.size == size && (etag.is_empty() || h.etag.as_deref() == Some(etag)))
 }

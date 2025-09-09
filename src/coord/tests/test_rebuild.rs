@@ -2,7 +2,7 @@ use reqwest::Client;
 use tempfile::TempDir;
 
 mod common;
-use ::common::file_utils::{meta_key_for, sanitize_key};
+use ::common::key_utils::{Key, meta_key_for};
 use common::*;
 
 use coord::command::rebuild::{RebuildArgs, rebuild};
@@ -11,7 +11,7 @@ use coord::core::meta::{KvDb, Meta, TxState};
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     // Setup: coordinator and 2 volumes with same blob A, no meta in DB
-    let coord = TestCoordinator::new().await?;
+    let coord = TestCoordinator::new_with_replicas(2).await?;
     let mut vol1 = TestVolume::new(coord.url().to_string(), "vol-1".to_string()).await?;
     let mut vol2 = TestVolume::new(coord.url().to_string(), "vol-2".to_string()).await?;
 
@@ -26,17 +26,18 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
 
     // Put a blob through the coordinator to create it on both volumes
     let content_a = b"test content A";
-    let key = "test-key-a";
+    let raw_key = "test-key-a";
     let (status, _etag, size) =
-        put_via_coordinator(&client, coord.url(), key, content_a.to_vec()).await?;
+        put_via_coordinator(&client, coord.url(), raw_key, content_a.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
     // Now clear the meta from the database to simulate the scenario
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
     coord.state.db.delete(&meta_key)?;
 
-    // Run rebuild with deep=false - use a separate DB for rebuild
+    // Run rebuild with deep=true - use a separate DB for rebuild
     let temp_dir = TempDir::new()?;
     let rebuild_db_path = temp_dir.path().join("rebuild_db");
 
@@ -44,7 +45,7 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
         index: rebuild_db_path.clone(),
         nodes: vec![vol1.url().to_string(), vol2.url().to_string()],
         dry_run: false,
-        deep: false,
+        deep: true,
         concurrency: 16,
         http_timeout_secs: 5,
     };
@@ -60,8 +61,14 @@ async fn test_rebuild_writes_metas_from_file_system() -> anyhow::Result<()> {
     assert_eq!(meta.state, TxState::Committed);
     assert_eq!(meta.size, size);
     assert_eq!(meta.replicas.len(), 2);
-    assert!(meta.replicas.contains(&"vol-1".to_string()));
-    assert!(meta.replicas.contains(&"vol-2".to_string()));
+    // Check that replicas are URL-based node IDs (host:port format)
+    assert!(
+        meta.replicas
+            .iter()
+            .all(|r| r.starts_with("127.0.0.1:") && r.ends_with("/"))
+    );
+    // Ensure we have two different replicas
+    assert_ne!(meta.replicas[0], meta.replicas[1]);
 
     vol1.shutdown().await?;
     vol2.shutdown().await?;
@@ -82,17 +89,19 @@ async fn test_rebuild_preserves_tombstones() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
 
     // Put and then delete a blob to create tombstone
-    let key = "test-key-tombstone";
+    let raw_key = "test-key-tombstone";
     let content = b"test content";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+    let (status, _, _) =
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let delete_status = delete_via_coordinator(&client, coord.url(), key).await?;
+    let delete_status = delete_via_coordinator(&client, coord.url(), raw_key).await?;
     assert_eq!(delete_status, reqwest::StatusCode::NO_CONTENT);
 
     // Verify meta is tombstoned
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
     let meta: Option<Meta> = coord.state.db.get(&meta_key)?;
     assert!(meta.is_some());
     assert_eq!(meta.unwrap().state, TxState::Tombstoned);
@@ -144,13 +153,15 @@ async fn test_rebuild_dry_run() -> anyhow::Result<()> {
     wait_for_volumes_alive(&client, coord.url(), 1, 3000).await?;
 
     // Put a blob and then clear meta
-    let key = "test-key-dry-run";
+    let raw_key = "test-key-dry-run";
     let content = b"test content";
-    let (status, _, _) = put_via_coordinator(&client, coord.url(), key, content.to_vec()).await?;
+    let (status, _, _) =
+        put_via_coordinator(&client, coord.url(), raw_key, content.to_vec()).await?;
     assert_eq!(status, reqwest::StatusCode::CREATED);
 
-    let key_enc = sanitize_key(key)?;
-    let meta_key = meta_key_for(&key_enc);
+    let key = Key::from_percent_encoded(raw_key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
     coord.state.db.delete(&meta_key)?;
 
     // Run rebuild in dry-run mode

@@ -200,6 +200,9 @@ impl TestVolume {
             .route("/internal/commit", post(routes::commit_handler))
             .route("/internal/abort", post(routes::abort_handler))
             .route("/internal/delete/{key}", delete(routes::delete_handler))
+            .route("/admin/list", get(routes::admin_list_handler))
+            .route("/admin/blob", get(routes::admin_blob_handler))
+            .route("/admin/sweep-tmp", post(routes::admin_sweep_tmp_handler))
             // Fault injection endpoints (test-only)
             .route(
                 "/admin/fail/prepare",
@@ -516,20 +519,24 @@ pub async fn follow_redirect_get(client: &Client, coord_url: &str, key: &str) ->
 
 /// Read metadata directly from RocksDB for testing
 pub fn meta_of(db: &KvDb, key: &str) -> Result<Option<Meta>> {
-    use common::file_utils::meta_key_for;
-    let meta_key = meta_key_for(&common::file_utils::sanitize_key(key)?);
+    use common::key_utils::{Key, meta_key_for};
+    let key = Key::from_percent_encoded(key).unwrap();
+    let key_enc = key.enc();
+    let meta_key = meta_key_for(key_enc);
     db.get(&meta_key)
 }
 
 /// Check which volumes have the blob file for a key
 pub fn which_volume_has_file(volumes: &[&TestVolume], key: &str) -> Result<Vec<String>> {
-    use common::file_utils::{blob_path, sanitize_key};
+    use common::file_utils::blob_path;
+    use common::key_utils::Key;
 
-    let key_enc = sanitize_key(key)?;
+    let key = Key::from_percent_encoded(key).unwrap();
+    let key_enc = key.enc();
     let mut found_nodes = Vec::new();
 
     for vol in volumes {
-        let path = blob_path(&vol.state.data_root, &key_enc);
+        let path = blob_path(&vol.state.data_root, key_enc);
         if path.exists() {
             found_nodes.push(vol.state.node_id.clone());
         }

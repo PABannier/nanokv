@@ -16,12 +16,13 @@ use walkdir::WalkDir;
 use crate::replicate::{CommitRequest, PullRequest, pull_from_head};
 use crate::state::VolumeState;
 use common::file_utils::{
-    blob_path, file_exists, file_hash, fsync_dir, sanitize_key, stream_to_file_with_hash, tmp_path,
+    blob_path, file_exists, file_hash, fsync_dir, stream_to_file_with_hash, tmp_path,
 };
+use common::key_utils::Key;
 use common::schemas::{BlobHead, ListResponse, PutResponse, SweepTmpQuery, SweepTmpResponse};
 use common::{
-    api_error::ApiError,
     constants::{BLOB_DIR_NAME, TMP_DIR_NAME},
+    error::ApiError,
 };
 
 #[derive(Deserialize, Debug)]
@@ -46,7 +47,8 @@ pub async fn prepare_handler(
         )));
     }
 
-    let final_path = blob_path(&ctx.data_root, &req.key);
+    let key = Key::from_percent_encoded(&req.key)?;
+    let final_path = blob_path(&ctx.data_root, key.enc());
 
     // Write-once at volume level (defensive)
     if file_exists(&final_path).await {
@@ -109,7 +111,7 @@ pub async fn write_handler(
     Ok((StatusCode::CREATED, axum::Json(resp)))
 }
 
-// GET /:upload_id (head only)
+// GET /read/:upload_id (head only)
 pub async fn read_handler(
     Path(upload_id): Path<String>,
     State(ctx): State<VolumeState>,
@@ -222,8 +224,9 @@ pub async fn commit_handler(
         )));
     }
 
+    let key = Key::from_percent_encoded(&req.key)?;
     let tmp_path = tmp_path(&ctx.data_root, &req.upload_id);
-    let final_path = blob_path(&ctx.data_root, &req.key);
+    let final_path = blob_path(&ctx.data_root, key.enc());
 
     if !file_exists(&tmp_path).await {
         return Err(ApiError::TmpDirNotFound);
@@ -262,13 +265,13 @@ pub async fn abort_handler(
     Ok(StatusCode::OK)
 }
 
-// GET /:key
+// GET /blobs/:key
 pub async fn get_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
-    let path = blob_path(&ctx.data_root, &key_enc);
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let path = blob_path(&ctx.data_root, key.enc());
 
     if !file_exists(&path).await {
         return Err(ApiError::KeyNotFound);
@@ -286,8 +289,8 @@ pub async fn delete_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>,
 ) -> Result<StatusCode, ApiError> {
-    let key_enc = sanitize_key(&raw_key)?;
-    let path = blob_path(&ctx.data_root, &key_enc);
+    let key = Key::from_percent_encoded(&raw_key)?;
+    let path = blob_path(&ctx.data_root, key.enc());
 
     fs::remove_file(&path).await?;
 
@@ -357,8 +360,8 @@ pub async fn admin_blob_handler(
     State(ctx): State<VolumeState>,
     Query(req): Query<BlobRequest>,
 ) -> Result<Json<BlobHead>, ApiError> {
-    let key_enc = sanitize_key(&req.key)?;
-    let path = blob_path(&ctx.data_root, &key_enc);
+    let key = Key::from_percent_encoded(&req.key)?;
+    let path = blob_path(&ctx.data_root, key.enc());
 
     let exists = file_exists(&path).await;
 
