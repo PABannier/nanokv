@@ -7,6 +7,7 @@ use axum::{
 };
 use futures_util::future::try_join_all;
 use std::time::Instant;
+use tracing::Instrument;
 
 use common::constants::NODE_KEY_PREFIX;
 use common::error::ApiError;
@@ -26,22 +27,28 @@ use crate::core::state::CoordinatorState;
 
 // PUT /:key
 /// A PUT request to create or replace an object, orchestrated in a 2 phase commit.
+#[tracing::instrument(name="coord.put", skip(body, ctx), fields(key = raw_key))]
 pub async fn put_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
     headers: HeaderMap,
     body: Body,
 ) -> Result<(StatusCode, HeaderMap), ApiError> {
-    // Sanity checks
     let key = Key::from_percent_encoded(&raw_key)?;
     let key_enc = key.enc();
     let meta_key = meta_key_for(key_enc);
-    ensure_write_once(&ctx, &meta_key)?;
 
-    content_length_check(&headers, ctx.max_size)?;
+    // Sanity checks
+    {
+        let _sanity_check = tracing::info_span!("sanity_check").entered();
+        ensure_write_once(&ctx, &meta_key)?;
+        content_length_check(&headers, ctx.max_size)?;
+    }
 
     // Find replicas
     let replicas = {
+        let _choose_placement = tracing::info_span!("choose_placement").entered();
+
         let nodes = ctx
             .nodes
             .read()
@@ -49,6 +56,7 @@ pub async fn put_object(
             .values()
             .map(|n| n.info.clone())
             .collect::<Vec<_>>();
+
         choose_top_n_alive(&nodes, key_enc, ctx.n_replicas)
     };
 
@@ -66,12 +74,15 @@ pub async fn put_object(
     let mut guard = AbortGuard::new(&ctx.http_client, &replicas, upload_id.clone());
 
     // Prepare all replicas with a retry
-    prepare::retry_prepare_all(&ctx.http_client, &replicas, key_enc, &upload_id).await?;
+    prepare::retry_prepare_all(&ctx.http_client, &replicas, key_enc, &upload_id)
+        .instrument(tracing::info_span!("prepare"))
+        .await?;
 
     // Write to the head node (single-shot; long timeout). If this fails, abort.
     let head = replicas.first().unwrap();
-    let (size, etag) =
-        write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id).await?;
+    let (size, etag) = write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id)
+        .instrument(tracing::info_span!("write_to_head"))
+        .await?;
 
     // Pull all from head with a retry
     pull::retry_pull_all(
@@ -82,6 +93,7 @@ pub async fn put_object(
         size,
         &etag,
     )
+    .instrument(tracing::info_span!("pull"))
     .await?;
 
     // At this point, all replicas have the data in temporary files. We can disarm the
@@ -90,7 +102,9 @@ pub async fn put_object(
     guard.disarm();
 
     // Commit
-    commit::retry_commit_all(&ctx.http_client, &replicas, &upload_id, key_enc).await?;
+    commit::retry_commit_all(&ctx.http_client, &replicas, &upload_id, key_enc)
+        .instrument(tracing::info_span!("commit"))
+        .await?;
 
     // Write committed transaction in DB
     meta::write_committed_meta(&ctx.db, &meta_key, size, etag.clone(), &replicas)?;

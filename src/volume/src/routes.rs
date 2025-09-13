@@ -32,6 +32,7 @@ pub struct PrepareRequest {
 }
 
 // POST /internal/prepare?key=?upload_id=
+#[tracing::instrument(name="volume.prepare", skip(ctx), fields(key = %req.key, upload_id = %req.upload_id))]
 pub async fn prepare_handler(
     Query(req): Query<PrepareRequest>,
     State(ctx): State<VolumeState>,
@@ -78,6 +79,7 @@ pub async fn prepare_handler(
 }
 
 // PUT /:upload_id (head only)
+#[tracing::instrument(name="volume.write", skip(ctx, body), fields(upload_id = %upload_id))]
 pub async fn write_handler(
     Path(upload_id): Path<String>,
     State(ctx): State<VolumeState>,
@@ -141,6 +143,7 @@ pub async fn read_handler(
 }
 
 // POST /pull?upload_id=?from= (follower only)
+#[tracing::instrument(name="volume.pull", skip(ctx), fields(upload_id = %req.upload_id, from = %req.from))]
 pub async fn pull_handler(
     Query(req): Query<PullRequest>,
     State(ctx): State<VolumeState>,
@@ -201,6 +204,7 @@ pub async fn pull_handler(
 }
 
 // POST /commit?upload_id=?key=
+#[tracing::instrument(name="volume.commit", skip(ctx), fields(upload_id = %req.upload_id, key = %req.key))]
 pub async fn commit_handler(
     Query(req): Query<CommitRequest>,
     State(ctx): State<VolumeState>,
