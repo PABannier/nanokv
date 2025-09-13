@@ -54,6 +54,22 @@ To run the benchmarks locally, you can run the following:
 ./run_benchmark.sh --help
 ```
 
+On my 2021 M1 Pro, when I run
+
+```bash
+./run_benchmark.sh 3 3 5600 5601 16 45s $((1<<20))
+```
+
+this is what I get:
+
+```makefile
+Host: M1 Pro · 16 GB · NVMe · MacOS 14.6.1 · Rust 1.89.0
+Cluster: 1 coord + 3 volumes (loopback), replicas=3, size=1 MiB, VUs=16, Dur=45s
+
+PUT:  p50 547 ms · p95 737 ms · p99  1.3 s
+GET:  p50   4 ms · p95  11 ms · p99  26 ms
+```
+
 ## Architecture at a glance
 
 ![Schema](./assets/schema.png "nanokv schema")
