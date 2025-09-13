@@ -14,13 +14,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      # Install LLVM/Clang if your build needs bindgen (fixes clang-sys errors)
-      - name: Install LLVM/Clang
+      - name: Install pre-built RocksDB
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-17-dev libclang-17-dev clang-17 pkg-config
-          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-17/bin/llvm-config" >> $GITHUB_ENV
-          echo "LIBCLANG_PATH=/usr/lib/llvm-17/lib" >> $GITHUB_ENV
+          sudo apt-get install -y librocksdb-dev pkg-config
+          echo "ROCKSDB_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+          echo "ROCKSDB_STATIC=0" >> $GITHUB_ENV
+          echo "ROCKSDB_COMPILE=0" >> $GITHUB_ENV
 
       - name: Install k6
         run: |
