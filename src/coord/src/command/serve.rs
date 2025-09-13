@@ -1,6 +1,7 @@
 use axum::{
     Router,
     routing::{get, post, put},
+    middleware,
 };
 use axum_server::Server;
 use clap::Parser;
@@ -14,6 +15,7 @@ use tracing::info;
 
 use common::constants::NODE_KEY_PREFIX;
 use common::url_utils::parse_socket_addr;
+use common::trace_middleware::trace_context_middleware;
 
 use crate::core::debug::debug_placement;
 use crate::core::health::node_status_sweeper;
@@ -109,6 +111,7 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
         .route("/admin/heartbeat", post(heartbeat))
         // Debug endpoint (test-only)
         .route("/debug/placement/{key}", get(debug_placement))
+        .layer(middleware::from_fn(trace_context_middleware))
         .with_state(state.clone());
 
     let socket_addr = parse_socket_addr(&serve_args.listen)?;
