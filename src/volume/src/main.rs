@@ -11,6 +11,7 @@ use tracing::info;
 
 use common::file_utils::init_dirs;
 use common::schemas::JoinRequest;
+use common::url_utils::parse_socket_addr;
 
 use volume::fault_injection::{
     FaultInjector, fail_commit, fail_etag_mismatch, fail_prepare, fail_pull, fail_read_tmp,
@@ -113,7 +114,9 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
 
     info!("listening on {}", args.public_url);
-    let server = Server::bind(args.public_url.parse()?).serve(app.into_make_service());
+
+    let socket_addr = parse_socket_addr(&args.public_url)?;
+    let server = Server::bind(socket_addr).serve(app.into_make_service());
 
     // Graceful shutdown: ctrl+c
     tokio::select! {
