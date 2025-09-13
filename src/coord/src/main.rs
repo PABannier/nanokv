@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+use common::telemetry::init_telemetry;
+
 use coord::command::gc::{GcArgs, gc};
 use coord::command::rebalance::{RebalanceArgs, rebalance};
 use coord::command::rebuild::{RebuildArgs, rebuild};
@@ -32,11 +34,7 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .with_target(false)
-        .compact()
-        .init();
+    init_telemetry("coord");
 
     let args = Args::parse();
 

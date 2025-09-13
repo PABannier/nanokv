@@ -37,6 +37,10 @@ rand = "0.9.2"
 humantime = "2.2.0"
 url = "2.5.7"
 futures = "0.3.31"
+opentelemetry = "0.30.0"
+tracing-opentelemetry = "0.31.0"
+opentelemetry-otlp = "0.30.0"
+opentelemetry_sdk = "0.30.0"
 
 
 # Integration tests are auto-discovered in tests/ directory

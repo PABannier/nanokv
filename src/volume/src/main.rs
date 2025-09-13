@@ -1,5 +1,5 @@
 use axum::{
-    Router,
+    Router, middleware,
     routing::{delete, get, post, put},
 };
 use axum_server::Server;
@@ -11,6 +11,8 @@ use tracing::info;
 
 use common::file_utils::init_dirs;
 use common::schemas::JoinRequest;
+use common::telemetry::init_telemetry;
+use common::trace_middleware::trace_context_middleware;
 use common::url_utils::parse_socket_addr;
 
 use volume::fault_injection::{
@@ -48,11 +50,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .with_target(false)
-        .compact()
-        .init();
+    init_telemetry("volume");
 
     let args = Args::parse();
     init_dirs(&args.data).await?;
@@ -111,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/resume", post(resume_server))
         .route("/admin/kill", post(kill_server))
         .route("/admin/reset", post(reset_faults))
+        .layer(middleware::from_fn(trace_context_middleware))
         .with_state(state);
 
     info!("listening on {}", args.public_url);

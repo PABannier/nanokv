@@ -9,7 +9,7 @@ DEFAULT_COORD_PORT=5600
 DEFAULT_VOLUME_START_PORT=5601
 DEFAULT_K6_VUS=16
 DEFAULT_K6_DURATION="45s"
-DEFAULT_K6_SIZE=$((1<<20))
+DEFAULT_K6_SIZE=1048576
 DEFAULT_K6_PUT_P95_THRESHOLD=1500
 DEFAULT_K6_GET_P95_THRESHOLD=100
 DEFAULT_K6_SUMMARY_EXPORT="perf.json"
@@ -98,6 +98,10 @@ fi
 PIDS=()
 TEMP_DIRS=()
 
+# Get the script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Cleanup function
 cleanup() {
     log_info "Cleaning up processes and temporary directories..."
@@ -152,9 +156,10 @@ check_dependencies() {
         exit 1
     fi
 
+
     # Check if benchmark file exists
-    if [[ ! -f "bench/bench_coord_put_get.js" ]]; then
-        log_error "Benchmark file bench/bench_coord_put_get.js not found"
+    if [[ ! -f "$SCRIPT_DIR/scenarios/bench_coord_put_get.js" ]]; then
+        log_error "Benchmark file $SCRIPT_DIR/scenarios/bench_coord_put_get.js not found"
         exit 1
     fi
 
@@ -165,21 +170,21 @@ check_dependencies() {
 build_binaries() {
     log_info "Building coordinator and volume binaries..."
 
-    cd src
+    cd "$PROJECT_ROOT/src"
     if ! cargo build --release; then
         log_error "Failed to build binaries"
         exit 1
     fi
-    cd ..
+    cd "$SCRIPT_DIR"
 
     # Verify binaries exist
-    if [[ ! -f "src/target/release/coord" ]]; then
-        log_error "Coordinator binary not found at src/target/release/coord"
+    if [[ ! -f "$PROJECT_ROOT/src/target/release/coord" ]]; then
+        log_error "Coordinator binary not found at $PROJECT_ROOT/src/target/release/coord"
         exit 1
     fi
 
-    if [[ ! -f "src/target/release/volume" ]]; then
-        log_error "Volume binary not found at src/target/release/volume"
+    if [[ ! -f "$PROJECT_ROOT/src/target/release/volume" ]]; then
+        log_error "Volume binary not found at $PROJECT_ROOT/src/target/release/volume"
         exit 1
     fi
 
@@ -209,19 +214,12 @@ create_temp_dirs() {
 start_coordinator() {
     log_info "Starting coordinator on port $COORD_PORT..."
 
-    # Build volume URLs for coordinator
-    VOLUME_URLS=""
-    for ((i=1; i<=VOLUMES; i++)); do
-        port=$((VOLUME_START_PORT + i - 1))
-        if [[ $i -eq 1 ]]; then
-            VOLUME_URLS="http://127.0.0.1:$port"
-        else
-            VOLUME_URLS="$VOLUME_URLS,http://127.0.0.1:$port"
-        fi
-    done
+    export OTEL_TRACES_EXPORTER=otlp
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+    export RUST_LOG=nanokv=info,coord=info,volume=info,common=info
 
     # Start coordinator in background
-    ./src/target/release/coord serve \
+    "$PROJECT_ROOT/src/target/release/coord" serve \
         --data "$COORD_DATA_DIR" \
         --index "$COORD_DATA_DIR/index" \
         --listen "127.0.0.1:$COORD_PORT" \
@@ -242,13 +240,17 @@ start_coordinator() {
 start_volumes() {
     log_info "Starting $VOLUMES volume servers..."
 
+    export OTEL_TRACES_EXPORTER=otlp
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+    export RUST_LOG=nanokv=info,coord=info,volume=info,common=info
+
     for ((i=1; i<=VOLUMES; i++)); do
         port=$((VOLUME_START_PORT + i - 1))
         vol_data_dir="${VOLUME_DATA_DIRS[$((i-1))]}"
 
         log_info "Starting volume server $i on port $port..."
 
-        ./src/target/release/volume \
+        "$PROJECT_ROOT/src/target/release/volume" \
             --data "$vol_data_dir" \
             --coordinator-url "http://127.0.0.1:$COORD_PORT" \
             --node-id "vol$i" \
@@ -325,7 +327,7 @@ run_benchmark() {
     export GET_P95_THRESHOLD="$K6_GET_P95_THRESHOLD"
 
     # Run k6 benchmark
-    if "$K6_BINARY" run bench/bench_coord_put_get.js --summary-export "$K6_SUMMARY_EXPORT"; then
+    if "$K6_BINARY" run "$SCRIPT_DIR/scenarios/bench_coord_put_get.js" --summary-export "$K6_SUMMARY_EXPORT"; then
         log_success "Benchmark completed successfully"
     else
         log_error "Benchmark failed"

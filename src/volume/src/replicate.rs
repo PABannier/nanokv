@@ -7,7 +7,7 @@ use common::file_utils::stream_to_file_with_hash;
 
 use crate::state::VolumeState;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct PullRequest {
     pub upload_id: String,
     pub from: String,
@@ -15,7 +15,7 @@ pub struct PullRequest {
     pub expected_etag: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CommitRequest {
     pub upload_id: String,
     pub key: String,

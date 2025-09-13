@@ -98,6 +98,7 @@ pub mod prepare {
 
     use futures_util::future::try_join_all;
     use reqwest::Client;
+    use tracing::Instrument;
 
     use crate::core::node::NodeInfo;
     use crate::core::op::retry::RetryConfig;
@@ -108,11 +109,10 @@ pub mod prepare {
         key: &str,
         upload_id: &str,
     ) -> Result<(), ApiError> {
-        try_join_all(
-            replicas
-                .iter()
-                .map(|r| retry_prepare(http, r, key, upload_id)),
-        )
+        try_join_all(replicas.iter().map(|r| {
+            let span = tracing::info_span!("prepare_replica", replica = %r.node_id);
+            retry_prepare(http, r, key, upload_id).instrument(span)
+        }))
         .await
         .map_err(|e| ApiError::Any(e.into()))?;
 
@@ -156,13 +156,14 @@ pub mod prepare {
     ) -> Result<(), ApiError> {
         let vol_url = format!("{}/internal/prepare", replica.internal_url);
 
-        let req = http
-            .post(&vol_url)
-            .query(&[("key", key)])
-            .query(&[("upload_id", upload_id)])
-            .timeout(cfg.per_attempt_timeout)
-            .build()
-            .unwrap();
+        let req = common::trace_middleware::inject_trace_context_reqwest(
+            http.post(&vol_url)
+                .query(&[("key", key)])
+                .query(&[("upload_id", upload_id)])
+                .timeout(cfg.per_attempt_timeout),
+        )
+        .build()
+        .unwrap();
 
         let resp = http.execute(req).await.map_err(ApiError::UpstreamReq)?;
         let st = resp.status();
@@ -198,7 +199,7 @@ pub mod write {
         let upstream_body = reqwest::Body::wrap_stream(stream);
 
         let volume_url = format!("{}/internal/write/{}", head.internal_url, upload_id);
-        let req = http.put(&volume_url);
+        let req = common::trace_middleware::inject_trace_context_reqwest(http.put(&volume_url));
 
         let resp = req
             .body(upstream_body)
@@ -226,6 +227,7 @@ pub mod pull {
     use anyhow::anyhow;
     use futures_util::future::try_join_all;
     use reqwest::Client;
+    use tracing::Instrument;
 
     use common::error::ApiError;
     use common::schemas::PutResponse;
@@ -242,11 +244,11 @@ pub mod pull {
         expected_size: u64,
         expected_etag: &str,
     ) -> Result<(), ApiError> {
-        try_join_all(
-            followers
-                .iter()
-                .map(|f| retry_pull(http, head, f, upload_id, expected_size, expected_etag)),
-        )
+        try_join_all(followers.iter().map(|f| {
+            let span =
+                tracing::info_span!("pull_replica", replica = %f.node_id, head = %head.node_id);
+            retry_pull(http, head, f, upload_id, expected_size, expected_etag).instrument(span)
+        }))
         .await?;
         Ok(())
     }
@@ -301,12 +303,13 @@ pub mod pull {
         let req_url = format!("{}/internal/pull", follower.internal_url);
         let from_url = format!("{}/internal/read/{}", head.internal_url, upload_id);
 
-        let req = http
-            .post(req_url)
-            .query(&[("upload_id", upload_id)])
-            .query(&[("from", from_url)])
-            .query(&[("expected_size", expected_size.to_string())])
-            .query(&[("expected_etag", expected_etag)]);
+        let req = common::trace_middleware::inject_trace_context_reqwest(
+            http.post(req_url)
+                .query(&[("upload_id", upload_id)])
+                .query(&[("from", from_url)])
+                .query(&[("expected_size", expected_size.to_string())])
+                .query(&[("expected_etag", expected_etag)]),
+        );
 
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
@@ -338,6 +341,7 @@ pub mod commit {
 
     use futures_util::future::try_join_all;
     use reqwest::Client;
+    use tracing::Instrument;
 
     use crate::core::node::NodeInfo;
 
@@ -347,11 +351,10 @@ pub mod commit {
         upload_id: &str,
         key: &str,
     ) -> Result<(), ApiError> {
-        try_join_all(
-            replicas
-                .iter()
-                .map(|r| retry_commit(http, r, upload_id, key)),
-        )
+        try_join_all(replicas.iter().map(|r| {
+            let span = tracing::info_span!("commit_replica", replica = %r.node_id);
+            retry_commit(http, r, upload_id, key).instrument(span)
+        }))
         .await
         .map_err(|e| ApiError::Any(e.into()))?;
 
@@ -394,10 +397,11 @@ pub mod commit {
     ) -> Result<(), ApiError> {
         let req_url = format!("{}/internal/commit", node.internal_url);
 
-        let req = http
-            .post(req_url)
-            .query(&[("upload_id", upload_id)])
-            .query(&[("key", key)]);
+        let req = common::trace_middleware::inject_trace_context_reqwest(
+            http.post(req_url)
+                .query(&[("upload_id", upload_id)])
+                .query(&[("key", key)]),
+        );
 
         let res = req.send().await.map_err(ApiError::UpstreamReq)?;
         let st = res.status();
@@ -417,7 +421,9 @@ async fn send_abort_request(
 ) -> Result<(), ApiError> {
     let req_url = format!("{}/internal/abort", node.internal_url);
 
-    let req = http.post(req_url).query(&[("upload_id", upload_id)]);
+    let req = common::trace_middleware::inject_trace_context_reqwest(
+        http.post(req_url).query(&[("upload_id", upload_id)]),
+    );
 
     let res = req
         .send()

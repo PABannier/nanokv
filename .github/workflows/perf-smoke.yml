@@ -31,14 +31,14 @@ jobs:
       - name: Run perf smoke
         id: k6
         run: |
-          ./run_benchmark.sh
-          cat perf.json
+          make perf-smoke
+          cat perf_smoke.json
 
       - name: Upload perf artifact
         uses: actions/upload-artifact@v4
         with:
           name: perf-smoke
-          path: perf.json
+          path: perf_smoke.json
 
       - name: Teardown
         if: always()

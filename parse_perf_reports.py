@@ -10,7 +10,6 @@ different benchmark configurations.
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import argparse
 
@@ -30,14 +29,14 @@ def extract_latency_metrics(metrics: Dict) -> Tuple[Dict, Dict]:
     """Extract PUT and GET latency metrics from k6 metrics."""
     put_metrics = metrics.get('http_req_duration{op:put}', {})
     get_metrics = metrics.get('http_req_duration{op:get}', {})
-    
+
     def extract_percentiles(metric_data: Dict) -> Dict:
         """Extract p50, p95 from metric data."""
         return {
             'p50': metric_data.get('med', 0),
             'p95': metric_data.get('p(95)', 0),
         }
-    
+
     return extract_percentiles(put_metrics), extract_percentiles(get_metrics)
 
 
@@ -53,18 +52,18 @@ def print_table(headers: List[str], rows: List[List[str]], title: str):
     """Print a formatted table."""
     print(f"\n{title}")
     print("=" * len(title))
-    
+
     # Calculate column widths
     col_widths = [len(header) for header in headers]
     for row in rows:
         for i, cell in enumerate(row):
             col_widths[i] = max(col_widths[i], len(str(cell)))
-    
+
     # Print header
     header_line = " | ".join(header.ljust(col_widths[i]) for i, header in enumerate(headers))
     print(header_line)
     print("-" * len(header_line))
-    
+
     # Print rows
     for row in rows:
         row_line = " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
@@ -78,7 +77,7 @@ def parse_vus_benchmarks(perf_dir: str) -> List[Tuple[int, Dict, Dict]]:
         ("perf_put_64_vus.json", 64),
         ("perf_put_128_vus.json", 128),
     ]
-    
+
     results = []
     for filename, vus in vus_files:
         filepath = os.path.join(perf_dir, filename)
@@ -86,7 +85,7 @@ def parse_vus_benchmarks(perf_dir: str) -> List[Tuple[int, Dict, Dict]]:
         if metrics:
             put_latency, get_latency = extract_latency_metrics(metrics)
             results.append((vus, put_latency, get_latency))
-    
+
     return sorted(results, key=lambda x: x[0])
 
 
@@ -98,7 +97,7 @@ def parse_object_size_benchmarks(perf_dir: str) -> List[Tuple[str, Dict, Dict]]:
         ("perf_latency_16mb.json", "16MB"),
         ("perf_latency_64mb.json", "64MB"),
     ]
-    
+
     results = []
     for filename, size_label in size_files:
         filepath = os.path.join(perf_dir, filename)
@@ -106,7 +105,7 @@ def parse_object_size_benchmarks(perf_dir: str) -> List[Tuple[str, Dict, Dict]]:
         if metrics:
             put_latency, get_latency = extract_latency_metrics(metrics)
             results.append((size_label, put_latency, get_latency))
-    
+
     return results
 
 
@@ -117,7 +116,7 @@ def parse_replication_benchmarks(perf_dir: str) -> List[Tuple[int, Dict, Dict]]:
         ("perf_replication_2.json", 2),
         ("perf_replication_3.json", 3),
     ]
-    
+
     results = []
     for filename, replicas in replication_files:
         filepath = os.path.join(perf_dir, filename)
@@ -125,7 +124,7 @@ def parse_replication_benchmarks(perf_dir: str) -> List[Tuple[int, Dict, Dict]]:
         if metrics:
             put_latency, get_latency = extract_latency_metrics(metrics)
             results.append((replicas, put_latency, get_latency))
-    
+
     return sorted(results, key=lambda x: x[0])
 
 
@@ -133,7 +132,7 @@ def generate_vus_table(results: List[Tuple[int, Dict, Dict]]):
     """Generate table for VUs benchmark."""
     headers = ["VUs", "PUT p50", "PUT p95", "GET p50", "GET p95"]
     rows = []
-    
+
     for vus, put_latency, get_latency in results:
         row = [
             str(vus),
@@ -143,7 +142,7 @@ def generate_vus_table(results: List[Tuple[int, Dict, Dict]]):
             format_latency(get_latency['p95']),
         ]
         rows.append(row)
-    
+
     print_table(headers, rows, "PUT Throughput vs. Concurrency (VUs)")
 
 
@@ -151,7 +150,7 @@ def generate_object_size_table(results: List[Tuple[str, Dict, Dict]]):
     """Generate table for object size benchmark."""
     headers = ["Object Size", "PUT p50", "PUT p95", "GET p50", "GET p95"]
     rows = []
-    
+
     for size_label, put_latency, get_latency in results:
         row = [
             size_label,
@@ -161,7 +160,7 @@ def generate_object_size_table(results: List[Tuple[str, Dict, Dict]]):
             format_latency(get_latency['p95']),
         ]
         rows.append(row)
-    
+
     print_table(headers, rows, "Latency vs. Object Size (64 VUs)")
 
 
@@ -169,7 +168,7 @@ def generate_replication_table(results: List[Tuple[int, Dict, Dict]]):
     """Generate table for replication factor benchmark."""
     headers = ["Replicas", "PUT p50", "PUT p95", "GET p50", "GET p95"]
     rows = []
-    
+
     for replicas, put_latency, get_latency in results:
         row = [
             str(replicas),
@@ -179,7 +178,7 @@ def generate_replication_table(results: List[Tuple[int, Dict, Dict]]):
             format_latency(get_latency['p95']),
         ]
         rows.append(row)
-    
+
     print_table(headers, rows, "Replication Factor Impact (64 VUs, 1MB objects)")
 
 
@@ -188,37 +187,37 @@ def main():
     parser = argparse.ArgumentParser(description="Parse k6 performance reports and generate benchmark tables")
     parser.add_argument("--perf-dir", default="perf", help="Directory containing performance JSON files")
     args = parser.parse_args()
-    
+
     perf_dir = args.perf_dir
-    
+
     if not os.path.exists(perf_dir):
         print(f"Error: Performance directory '{perf_dir}' not found")
         sys.exit(1)
-    
+
     print("NanoKV Benchmark Results")
     print("=" * 50)
-    
+
     # Parse and generate VUs table
     vus_results = parse_vus_benchmarks(perf_dir)
     if vus_results:
         generate_vus_table(vus_results)
     else:
         print("Warning: No VUs benchmark results found")
-    
+
     # Parse and generate object size table
     size_results = parse_object_size_benchmarks(perf_dir)
     if size_results:
         generate_object_size_table(size_results)
     else:
         print("Warning: No object size benchmark results found")
-    
+
     # Parse and generate replication table
     replication_results = parse_replication_benchmarks(perf_dir)
     if replication_results:
         generate_replication_table(replication_results)
     else:
         print("Warning: No replication factor benchmark results found")
-    
+
     print("\nBenchmark analysis complete!")
 
 
