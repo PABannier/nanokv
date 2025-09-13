@@ -68,7 +68,9 @@ pub async fn put_object(
     let _permit = ctx.inflight.acquire().await.unwrap();
 
     // Write pending transaction in DB
+    let _write_pending_meta = tracing::info_span!("write_pending_meta").entered();
     let upload_id = meta::write_pending_meta(&ctx.db, &meta_key, &replicas)?;
+    drop(_write_pending_meta);
 
     // Abort guard (abort on failure if dropped before disarmed)
     let mut guard = AbortGuard::new(&ctx.http_client, &replicas, upload_id.clone());
