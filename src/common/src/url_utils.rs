@@ -1,6 +1,6 @@
 use anyhow::anyhow;
-use url::Url;
 use std::net::SocketAddr;
+use url::Url;
 
 pub fn sanitize_url(url: &str) -> anyhow::Result<String> {
     // Trim whitespace and check for empty input
