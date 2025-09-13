@@ -9,7 +9,7 @@ DEFAULT_COORD_PORT=5600
 DEFAULT_VOLUME_START_PORT=5601
 DEFAULT_K6_VUS=16
 DEFAULT_K6_DURATION="45s"
-DEFAULT_K6_SIZE=$((1<<20))
+DEFAULT_K6_SIZE=1048576
 DEFAULT_K6_PUT_P95_THRESHOLD=1500
 DEFAULT_K6_GET_P95_THRESHOLD=100
 DEFAULT_K6_SUMMARY_EXPORT="perf.json"
@@ -156,7 +156,7 @@ check_dependencies() {
         exit 1
     fi
 
-    
+
     # Check if benchmark file exists
     if [[ ! -f "$SCRIPT_DIR/scenarios/bench_coord_put_get.js" ]]; then
         log_error "Benchmark file $SCRIPT_DIR/scenarios/bench_coord_put_get.js not found"
