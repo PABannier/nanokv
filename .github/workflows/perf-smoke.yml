@@ -31,7 +31,7 @@ jobs:
       - name: Run perf smoke
         id: k6
         run: |
-          ./run_benchmark.sh
+          make perf-smoke
           cat perf.json
 
       - name: Upload perf artifact
