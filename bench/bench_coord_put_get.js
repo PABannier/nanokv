@@ -5,8 +5,8 @@ export const options = {
   vus: __ENV.VUS ? +__ENV.VUS : 16,
   duration: __ENV.DUR || '45s',
   thresholds: {
-    'http_req_duration{op:put}': ['p(95)<1500'],
-    'http_req_duration{op:get}': ['p(95)<100'],
+    'http_req_duration{op:put}': [`p(95)<${__ENV.PUT_P95_THRESHOLD || 1500}`],
+    'http_req_duration{op:get}': [`p(95)<${__ENV.GET_P95_THRESHOLD || 100}`],
     'checks': ['rate>0.99'],
   },
 };
