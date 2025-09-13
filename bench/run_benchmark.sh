@@ -214,16 +214,9 @@ create_temp_dirs() {
 start_coordinator() {
     log_info "Starting coordinator on port $COORD_PORT..."
 
-    # Build volume URLs for coordinator
-    VOLUME_URLS=""
-    for ((i=1; i<=VOLUMES; i++)); do
-        port=$((VOLUME_START_PORT + i - 1))
-        if [[ $i -eq 1 ]]; then
-            VOLUME_URLS="http://127.0.0.1:$port"
-        else
-            VOLUME_URLS="$VOLUME_URLS,http://127.0.0.1:$port"
-        fi
-    done
+    export OTEL_TRACES_EXPORTER=otlp
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+    export RUST_LOG=nanokv=info,coord=info,volume=info,common=info
 
     # Start coordinator in background
     "$PROJECT_ROOT/src/target/release/coord" serve \
@@ -246,6 +239,10 @@ start_coordinator() {
 # Start volume servers
 start_volumes() {
     log_info "Starting $VOLUMES volume servers..."
+
+    export OTEL_TRACES_EXPORTER=otlp
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+    export RUST_LOG=nanokv=info,coord=info,volume=info,common=info
 
     for ((i=1; i<=VOLUMES; i++)); do
         port=$((VOLUME_START_PORT + i - 1))
@@ -328,11 +325,6 @@ run_benchmark() {
     export SIZE="$K6_SIZE"
     export PUT_P95_THRESHOLD="$K6_PUT_P95_THRESHOLD"
     export GET_P95_THRESHOLD="$K6_GET_P95_THRESHOLD"
-
-    # Export environment variables for tracing
-    export OTEL_TRACES_EXPORTER=otlp
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-    export RUST_LOG=nanokv=info,coord=info,volume=info,common=info
 
     # Run k6 benchmark
     if "$K6_BINARY" run "$SCRIPT_DIR/scenarios/bench_coord_put_get.js" --summary-export "$K6_SUMMARY_EXPORT"; then
