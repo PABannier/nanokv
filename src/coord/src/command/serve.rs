@@ -15,7 +15,7 @@ use tracing::info;
 use common::constants::NODE_KEY_PREFIX;
 
 use crate::core::debug::debug_placement;
-use crate::core::health::{node_status_sweeper, startup_cleanup, sweep_tmp_orphans};
+use crate::core::health::node_status_sweeper;
 use crate::core::meta::KvDb;
 use crate::core::node::{NodeInfo, NodeRuntime};
 use crate::core::routes::{
@@ -72,15 +72,6 @@ pub struct ServeArgs {
 
 pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
     let db = KvDb::open(&serve_args.index)?;
-
-    // Cleanup before serving
-    startup_cleanup(
-        &serve_args.data,
-        &db,
-        Duration::from_secs(serve_args.pending_grace_secs),
-    )
-    .await?;
-    sweep_tmp_orphans(&serve_args.data, &db).await?;
 
     let nodes = read_node_infos_from_db(&db)?;
 
