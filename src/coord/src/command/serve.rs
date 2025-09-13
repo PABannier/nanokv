@@ -13,6 +13,7 @@ use tokio::sync::watch;
 use tracing::info;
 
 use common::constants::NODE_KEY_PREFIX;
+use common::url_utils::parse_socket_addr;
 
 use crate::core::debug::debug_placement;
 use crate::core::health::node_status_sweeper;
@@ -110,8 +111,10 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
         .route("/debug/placement/{key}", get(debug_placement))
         .with_state(state.clone());
 
+    let socket_addr = parse_socket_addr(&serve_args.listen)?;
+    let server = Server::bind(socket_addr).serve(app.into_make_service());
+
     info!("listening on {}", serve_args.listen);
-    let server = Server::bind(serve_args.listen.parse()?).serve(app.into_make_service());
 
     // Graceful shutdown: ctrl+c
     tokio::select! {
