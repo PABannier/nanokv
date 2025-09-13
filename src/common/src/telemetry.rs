@@ -23,13 +23,19 @@ pub fn init_telemetry(service_name: &'static str) {
         match create_otlp_tracer(&otlp_endpoint, service_name) {
             Ok(tracer) => tracer,
             Err(e) => {
-                eprintln!("Failed to initialize OTLP tracer for {}: {}", service_name, e);
+                eprintln!(
+                    "Failed to initialize OTLP tracer for {}: {}",
+                    service_name, e
+                );
                 eprintln!("Falling back to stdout exporter");
                 init_stdout_tracer(service_name)
             }
         }
     } else {
-        eprintln!("Using stdout tracer for {} (set OTEL_TRACES_EXPORTER=otlp for OTLP)", service_name);
+        eprintln!(
+            "Using stdout tracer for {} (set OTEL_TRACES_EXPORTER=otlp for OTLP)",
+            service_name
+        );
         init_stdout_tracer(service_name)
     };
 
@@ -41,8 +47,10 @@ pub fn init_telemetry(service_name: &'static str) {
         .init();
 }
 
-
-fn create_otlp_tracer(endpoint: &str, service_name: &'static str) -> Result<opentelemetry_sdk::trace::Tracer> {
+fn create_otlp_tracer(
+    endpoint: &str,
+    service_name: &'static str,
+) -> Result<opentelemetry_sdk::trace::Tracer> {
     use opentelemetry_otlp::WithExportConfig;
 
     // Parse endpoint to determine if it's HTTP or gRPC
@@ -62,7 +70,9 @@ fn create_otlp_tracer(endpoint: &str, service_name: &'static str) -> Result<open
         Ok(provider.tracer(service_name))
     } else {
         // For gRPC (port 4317), fall back to stdout for now since the API is complex
-        eprintln!("gRPC OTLP not fully implemented, using stdout. Use HTTP endpoint (port 4318) for OTLP");
+        eprintln!(
+            "gRPC OTLP not fully implemented, using stdout. Use HTTP endpoint (port 4318) for OTLP"
+        );
         Err(anyhow::anyhow!("gRPC OTLP not implemented"))
     }
 }
