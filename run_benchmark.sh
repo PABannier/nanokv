@@ -1,22 +1,5 @@
 #!/bin/bash
 
-:'
-# Comprehensive benchmark script for nanokv
-# Builds coordinator and volume servers, launches cluster, and runs k6 benchmark
-
-# Use all defaults (3 volumes, 3 replicas)
-./run_benchmark.sh
-
-# Launch 5 volumes with default settings
-./run_benchmark.sh 5
-
-# Full configuration: 5 volumes, 3 replicas, custom ports, 32 VUs, 60s duration, 2MB objects
-./run_benchmark.sh 5 3 3000 3001 32 "60s" 2097152
-
-# Show help
-./run_benchmark.sh --help
-'
-
 set -euo pipefail
 
 # Default configuration
@@ -232,7 +215,7 @@ start_coordinator() {
     ./src/target/release/coord serve \
         --data "$COORD_DATA_DIR" \
         --index "$COORD_DATA_DIR/index" \
-        --listen "0.0.0.0:$COORD_PORT" \
+        --listen "127.0.0.1:$COORD_PORT" \
         --n-replicas "$REPLICAS" \
         --max-inflight 8 \
         --hb-alive-secs 5 \
@@ -262,8 +245,8 @@ start_volumes() {
             --node-id "vol$i" \
             --public-url "http://127.0.0.1:$port" \
             --internal-url "http://127.0.0.1:$port" \
-    --subvols 1 \
-    --heartbeat-interval-secs 1 \
+            --subvols 1 \
+            --heartbeat-interval-secs 1 \
             --http-timeout-secs 10 &
 
         vol_pid=$!
@@ -331,7 +314,7 @@ run_benchmark() {
     export SIZE="$K6_SIZE"
 
     # Run k6 benchmark
-    if "$K6_BINARY" run bench/bench_coord_put_get.js; then
+    if "$K6_BINARY" run bench/bench_coord_put_get.js --summary-export perf.json; then
         log_success "Benchmark completed successfully"
     else
         log_error "Benchmark failed"
