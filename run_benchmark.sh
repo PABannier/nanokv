@@ -10,6 +10,9 @@ DEFAULT_VOLUME_START_PORT=5601
 DEFAULT_K6_VUS=16
 DEFAULT_K6_DURATION="45s"
 DEFAULT_K6_SIZE=$((1<<20))
+DEFAULT_K6_PUT_P95_THRESHOLD=1500
+DEFAULT_K6_GET_P95_THRESHOLD=100
+DEFAULT_K6_SUMMARY_EXPORT="perf.json"
 
 # Parse command line arguments
 VOLUMES=${1:-$DEFAULT_VOLUMES}
@@ -19,6 +22,9 @@ VOLUME_START_PORT=${4:-$DEFAULT_VOLUME_START_PORT}
 K6_VUS=${5:-$DEFAULT_K6_VUS}
 K6_DURATION=${6:-$DEFAULT_K6_DURATION}
 K6_SIZE=${7:-$DEFAULT_K6_SIZE}
+K6_PUT_P95_THRESHOLD=${8:-$DEFAULT_K6_PUT_P95_THRESHOLD}
+K6_GET_P95_THRESHOLD=${9:-$DEFAULT_K6_GET_P95_THRESHOLD}
+K6_SUMMARY_EXPORT=${10:-$DEFAULT_K6_SUMMARY_EXPORT}
 
 # Colors for output
 RED='\033[0;31m'
@@ -47,7 +53,7 @@ log_error() {
 # Usage function
 usage() {
     cat << EOF
-Usage: $0 [volumes] [replicas] [coord_port] [volume_start_port] [k6_vus] [k6_duration] [k6_size]
+Usage: $0 [volumes] [replicas] [coord_port] [volume_start_port] [k6_vus] [k6_duration] [k6_size] [k6_put_p95_threshold] [k6_get_p95_threshold] [k6_summary_export]
 
 Arguments:
   volumes           Number of volume servers to launch (default: $DEFAULT_VOLUMES)
@@ -57,11 +63,14 @@ Arguments:
   k6_vus           K6 virtual users (default: $DEFAULT_K6_VUS)
   k6_duration      K6 test duration (default: $DEFAULT_K6_DURATION)
   k6_size          Object size in bytes (default: $DEFAULT_K6_SIZE)
+  k6_put_p95_threshold P95 threshold for PUT requests (default: $DEFAULT_K6_PUT_P95_THRESHOLD)
+  k6_get_p95_threshold P95 threshold for GET requests (default: $DEFAULT_K6_GET_P95_THRESHOLD)
+  k6_summary_export Path to k6 summary export file (default: $DEFAULT_K6_SUMMARY_EXPORT)
 
 Examples:
-  $0                              # Use all defaults
-  $0 5                            # 5 volumes, other defaults
-  $0 5 3 3000 3001 32 "60s" 2097152  # Full configuration
+  $0                                                      # Use all defaults
+  $0 5                                                    # 5 volumes, other defaults
+  $0 5 3 3000 3001 32 "60s" 2097152 1500 100 "perf.json"  # Full configuration
 
 Environment Variables:
   K6_BINARY        Path to k6 binary (default: k6)
@@ -312,9 +321,11 @@ run_benchmark() {
     export VUS="$K6_VUS"
     export DUR="$K6_DURATION"
     export SIZE="$K6_SIZE"
+    export PUT_P95_THRESHOLD="$K6_PUT_P95_THRESHOLD"
+    export GET_P95_THRESHOLD="$K6_GET_P95_THRESHOLD"
 
     # Run k6 benchmark
-    if "$K6_BINARY" run bench/bench_coord_put_get.js --summary-export perf.json; then
+    if "$K6_BINARY" run bench/bench_coord_put_get.js --summary-export "$K6_SUMMARY_EXPORT"; then
         log_success "Benchmark completed successfully"
     else
         log_error "Benchmark failed"
