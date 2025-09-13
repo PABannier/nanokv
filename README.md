@@ -27,6 +27,33 @@ This repository is meant both as a a useful building block for small/medium data
 - [x] Resumable jobs (journaling for long-running operations)
 - [x] 1 MB–1 GB blob sweet spot (works outside that range; perf characteristics differ)
 
+## Benchmarks
+
+First, make sure you install `jq`. On MacOS, run:
+
+```bash
+brew install jq
+```
+
+To run the benchmarks locally, you can run the following:
+
+```bash
+# Comprehensive benchmark script for nanokv
+# Builds coordinator and volume servers, launches cluster, and runs k6 benchmark
+
+# Use all defaults (3 volumes, 3 replicas)
+./run_benchmark.sh
+
+# Launch 5 volumes with default settings
+./run_benchmark.sh 5
+
+# Full configuration: 5 volumes, 3 replicas, custom ports, 32 VUs, 60s duration, 2MB objects
+./run_benchmark.sh 5 3 3000 3001 32 "60s" 2097152
+
+# Show help
+./run_benchmark.sh --help
+```
+
 ## Architecture at a glance
 
 ![Schema](./assets/schema.png "nanokv schema")
