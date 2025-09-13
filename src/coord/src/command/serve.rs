@@ -1,7 +1,6 @@
 use axum::{
-    Router,
+    Router, middleware,
     routing::{get, post, put},
-    middleware,
 };
 use axum_server::Server;
 use clap::Parser;
@@ -14,8 +13,8 @@ use tokio::sync::watch;
 use tracing::info;
 
 use common::constants::NODE_KEY_PREFIX;
-use common::url_utils::parse_socket_addr;
 use common::trace_middleware::trace_context_middleware;
+use common::url_utils::parse_socket_addr;
 
 use crate::core::debug::debug_placement;
 use crate::core::health::node_status_sweeper;

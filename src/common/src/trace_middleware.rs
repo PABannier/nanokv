@@ -1,9 +1,4 @@
-use axum::{
-    extract::Request,
-    http::HeaderMap,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
 use std::collections::HashMap;
@@ -45,17 +40,17 @@ impl<'a> Extractor for HeaderExtractor<'a> {
     }
 
     fn keys(&self) -> Vec<&str> {
-        self.headers
-            .keys()
-            .map(|k| k.as_str())
-            .collect()
+        self.headers.keys().map(|k| k.as_str()).collect()
     }
 }
 
 /// Helper function to inject trace context into HTTP headers for outgoing requests
 pub fn inject_trace_context(headers: &mut HashMap<String, String>) {
     global::get_text_map_propagator(|propagator| {
-        propagator.inject_context(&tracing_opentelemetry::OpenTelemetrySpanExt::context(&Span::current()), &mut HeaderInjector::new(headers))
+        propagator.inject_context(
+            &tracing_opentelemetry::OpenTelemetrySpanExt::context(&Span::current()),
+            &mut HeaderInjector::new(headers),
+        )
     });
 }
 
@@ -80,7 +75,7 @@ impl<'a> opentelemetry::propagation::Injector for HeaderInjector<'a> {
 pub fn inject_trace_context_reqwest(builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     let mut headers = HashMap::new();
     inject_trace_context(&mut headers);
-    
+
     let mut builder = builder;
     for (key, value) in headers {
         builder = builder.header(key, value);

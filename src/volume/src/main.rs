@@ -1,7 +1,6 @@
 use axum::{
-    Router,
+    Router, middleware,
     routing::{delete, get, post, put},
-    middleware,
 };
 use axum_server::Server;
 use clap::Parser;
@@ -13,8 +12,8 @@ use tracing::info;
 use common::file_utils::init_dirs;
 use common::schemas::JoinRequest;
 use common::telemetry::init_telemetry;
-use common::url_utils::parse_socket_addr;
 use common::trace_middleware::trace_context_middleware;
+use common::url_utils::parse_socket_addr;
 
 use volume::fault_injection::{
     FaultInjector, fail_commit, fail_etag_mismatch, fail_prepare, fail_pull, fail_read_tmp,

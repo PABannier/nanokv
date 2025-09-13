@@ -109,14 +109,10 @@ pub mod prepare {
         key: &str,
         upload_id: &str,
     ) -> Result<(), ApiError> {
-        try_join_all(
-            replicas
-                .iter()
-                .map(|r| {
-                    let span = tracing::info_span!("prepare_replica", replica = %r.node_id);
-                    retry_prepare(http, r, key, upload_id).instrument(span)
-                }),
-        )
+        try_join_all(replicas.iter().map(|r| {
+            let span = tracing::info_span!("prepare_replica", replica = %r.node_id);
+            retry_prepare(http, r, key, upload_id).instrument(span)
+        }))
         .await
         .map_err(|e| ApiError::Any(e.into()))?;
 
@@ -161,12 +157,13 @@ pub mod prepare {
         let vol_url = format!("{}/internal/prepare", replica.internal_url);
 
         let req = common::trace_middleware::inject_trace_context_reqwest(
-            http
-                .post(&vol_url)
+            http.post(&vol_url)
                 .query(&[("key", key)])
                 .query(&[("upload_id", upload_id)])
-                .timeout(cfg.per_attempt_timeout)
-        ).build().unwrap();
+                .timeout(cfg.per_attempt_timeout),
+        )
+        .build()
+        .unwrap();
 
         let resp = http.execute(req).await.map_err(ApiError::UpstreamReq)?;
         let st = resp.status();
@@ -202,9 +199,7 @@ pub mod write {
         let upstream_body = reqwest::Body::wrap_stream(stream);
 
         let volume_url = format!("{}/internal/write/{}", head.internal_url, upload_id);
-        let req = common::trace_middleware::inject_trace_context_reqwest(
-            http.put(&volume_url)
-        );
+        let req = common::trace_middleware::inject_trace_context_reqwest(http.put(&volume_url));
 
         let resp = req
             .body(upstream_body)
@@ -249,14 +244,11 @@ pub mod pull {
         expected_size: u64,
         expected_etag: &str,
     ) -> Result<(), ApiError> {
-        try_join_all(
-            followers
-                .iter()
-                .map(|f| {
-                    let span = tracing::info_span!("pull_replica", replica = %f.node_id, head = %head.node_id);
-                    retry_pull(http, head, f, upload_id, expected_size, expected_etag).instrument(span)
-                }),
-        )
+        try_join_all(followers.iter().map(|f| {
+            let span =
+                tracing::info_span!("pull_replica", replica = %f.node_id, head = %head.node_id);
+            retry_pull(http, head, f, upload_id, expected_size, expected_etag).instrument(span)
+        }))
         .await?;
         Ok(())
     }
@@ -312,12 +304,11 @@ pub mod pull {
         let from_url = format!("{}/internal/read/{}", head.internal_url, upload_id);
 
         let req = common::trace_middleware::inject_trace_context_reqwest(
-            http
-                .post(req_url)
+            http.post(req_url)
                 .query(&[("upload_id", upload_id)])
                 .query(&[("from", from_url)])
                 .query(&[("expected_size", expected_size.to_string())])
-                .query(&[("expected_etag", expected_etag)])
+                .query(&[("expected_etag", expected_etag)]),
         );
 
         match req.send().await {
@@ -360,14 +351,10 @@ pub mod commit {
         upload_id: &str,
         key: &str,
     ) -> Result<(), ApiError> {
-        try_join_all(
-            replicas
-                .iter()
-                .map(|r| {
-                    let span = tracing::info_span!("commit_replica", replica = %r.node_id);
-                    retry_commit(http, r, upload_id, key).instrument(span)
-                }),
-        )
+        try_join_all(replicas.iter().map(|r| {
+            let span = tracing::info_span!("commit_replica", replica = %r.node_id);
+            retry_commit(http, r, upload_id, key).instrument(span)
+        }))
         .await
         .map_err(|e| ApiError::Any(e.into()))?;
 
@@ -411,10 +398,9 @@ pub mod commit {
         let req_url = format!("{}/internal/commit", node.internal_url);
 
         let req = common::trace_middleware::inject_trace_context_reqwest(
-            http
-                .post(req_url)
+            http.post(req_url)
                 .query(&[("upload_id", upload_id)])
-                .query(&[("key", key)])
+                .query(&[("key", key)]),
         );
 
         let res = req.send().await.map_err(ApiError::UpstreamReq)?;
@@ -436,7 +422,7 @@ async fn send_abort_request(
     let req_url = format!("{}/internal/abort", node.internal_url);
 
     let req = common::trace_middleware::inject_trace_context_reqwest(
-        http.post(req_url).query(&[("upload_id", upload_id)])
+        http.post(req_url).query(&[("upload_id", upload_id)]),
     );
 
     let res = req
