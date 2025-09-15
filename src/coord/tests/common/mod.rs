@@ -81,7 +81,12 @@ impl TestCoordinator {
 
         let state = CoordinatorState {
             http_client: Client::builder().timeout(Duration::from_secs(10)).build()?,
-            inflight: Arc::new(tokio::sync::Semaphore::new(4)),
+            control_inflight: Arc::new(tokio::sync::Semaphore::new(4)),
+            data_inflight: Arc::new(tokio::sync::Semaphore::new(4)),
+            per_node_inflight: Arc::new(RwLock::new(HashMap::new())),
+            max_control_inflight: 4,
+            max_data_inflight: 4,
+            max_per_node_inflight: 4,
             nodes: Arc::new(RwLock::new(HashMap::new())),
             db,
             max_size: 1024 * 1024 * 1024, // 1GB
