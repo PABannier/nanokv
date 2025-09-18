@@ -349,7 +349,7 @@ pub async fn head_object(
 }
 
 // GET /admin/nodes
-#[tracing::instrument(name="coord.admin.list_nodes", skip(ctx))]
+#[tracing::instrument(name = "coord.admin.list_nodes", skip(ctx))]
 pub async fn list_nodes(
     State(ctx): State<CoordinatorState>,
 ) -> Result<(StatusCode, impl IntoResponse), ApiError> {
