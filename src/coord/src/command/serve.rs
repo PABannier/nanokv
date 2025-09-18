@@ -51,6 +51,10 @@ pub struct ServeArgs {
     #[arg(long, default_value_t = 2)]
     max_per_node_inflight: usize,
 
+    /// Maximum timeout to acquire a per-node inflight permit (seconds)
+    #[arg(long, default_value_t = 2)]
+    per_node_timeout: u64,
+
     /// Max allowed object size in bytes (default: 1 GB)
     #[arg(long, default_value_t = 1024 * 1024 * 1024u64)]
     max_size: u64,
@@ -142,8 +146,25 @@ fn init_state(args: ServeArgs, db: KvDb, nodes: HashMap<String, NodeRuntime>) ->
         })
         .collect::<HashMap<String, Arc<Semaphore>>>();
 
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(8) // Max idle connections per host
+        .pool_idle_timeout(Duration::from_secs(60)) // Keep connections alive
+        // HTTP/2 optimizations
+        .http2_prior_knowledge() // Use HTTP/2 if available
+        .http2_keep_alive_interval(Duration::from_secs(30))
+        .http2_keep_alive_timeout(Duration::from_secs(10))
+        .http2_keep_alive_while_idle(true)
+        // TCP settings
+        .tcp_keepalive(Duration::from_secs(30))
+        .tcp_nodelay(true) // Disable Nagle's algorithm for low latency
+        // Timeouts (per-operation timeouts are set in retry logic)
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(300)) // Overall request timeout (for large uploads)
+        .build()
+        .unwrap();
+
     CoordinatorState {
-        http_client: reqwest::Client::new(),
+        http_client,
         control_inflight: Arc::new(Semaphore::new(args.max_control_inflight)),
         data_inflight: Arc::new(Semaphore::new(args.max_data_inflight)),
         per_node_inflight: Arc::new(RwLock::new(per_node_inflight)),
@@ -151,6 +172,7 @@ fn init_state(args: ServeArgs, db: KvDb, nodes: HashMap<String, NodeRuntime>) ->
         db,
         n_replicas: args.n_replicas,
         max_size: args.max_size,
+        per_node_timeout: args.per_node_timeout,
         hb_alive_secs: args.hb_alive_secs,
         hb_down_secs: args.hb_down_secs,
         node_status_sweep_secs: args.node_status_sweep_secs,
