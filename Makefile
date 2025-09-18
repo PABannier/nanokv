@@ -9,8 +9,11 @@ SIZE_4MB=4194304
 SIZE_16MB=16777216
 SIZE_64MB=67108864
 
+single-volume:
+	cd bench && ./run_benchmark.sh 1 1 5600 5601 128 "60s" $(SIZE_64MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_single_volume.json"
+
 perf-smoke:
-	cd bench && ./run_benchmark.sh 3 2 5600 5601 16 "60s" $(SIZE_1MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "perf_smoke.json"
+	cd bench && ./run_benchmark.sh 3 2 5600 5601 16 "60s" $(SIZE_1MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_smoke.json"
 
 bench-concurrency:
 	cd bench && ./run_benchmark.sh 3 2 5600 5601  16 "60s" $(SIZE_1MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_put_16_vus.json"
@@ -21,6 +24,9 @@ bench-object-size:
 	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_1MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_1mb.json"
 	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_4MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_4mb.json"
 	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_16MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_16mb.json"
+	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_64MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_64mb.json"
+
+debug:
 	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_64MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_64mb.json"
 
 bench-replication:
