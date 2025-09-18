@@ -180,11 +180,15 @@ pub mod write {
     use axum::body::Body;
     use futures_util::TryStreamExt;
     use reqwest::Client;
+    use tokio::io::BufReader;
+    use tokio_util::io::{ReaderStream, StreamReader};
 
     use common::error::ApiError;
     use common::schemas::PutResponse;
 
     use crate::core::node::NodeInfo;
+
+    const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
 
     pub async fn write_to_head_single_shot(
         http: &Client,
@@ -192,9 +196,12 @@ pub mod write {
         body: Body,
         upload_id: &str,
     ) -> Result<(u64, String), ApiError> {
-        let stream = body
-            .into_data_stream()
-            .map_err(|e| ApiError::Any(anyhow!("failed to stream to node: {}", e)));
+        // Convert body to AsyncRead with large buffer for better streaming performance
+        let reader = StreamReader::new(body.into_data_stream().map_err(std::io::Error::other));
+
+        // Use a large buffer for better throughput
+        let buffered_reader = BufReader::with_capacity(BUFFER_SIZE, reader);
+        let stream = ReaderStream::new(buffered_reader);
 
         let upstream_body = reqwest::Body::wrap_stream(stream);
 
