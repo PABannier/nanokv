@@ -26,9 +26,6 @@ bench-object-size:
 	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_16MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_16mb.json"
 	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_64MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_64mb.json"
 
-debug:
-	cd bench && ./run_benchmark.sh 3 2 5600 5601 64 "60s" $(SIZE_64MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_latency_64mb.json"
-
 bench-replication:
 	cd bench && ./run_benchmark.sh 5 1 5600 5601 64 "60s" $(SIZE_1MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_replication_1.json"
 	cd bench && ./run_benchmark.sh 5 2 5600 5601 64 "60s" $(SIZE_1MB) $(PUT_P95_THRESHOLD) $(GET_P95_THRESHOLD) "./perf/perf_replication_2.json"
