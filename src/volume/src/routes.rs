@@ -15,9 +15,8 @@ use walkdir::WalkDir;
 
 use crate::replicate::{CommitRequest, PullRequest, pull_from_head};
 use crate::state::VolumeState;
-use common::file_utils::{
-    blob_path, file_exists, file_hash, fsync_dir, stream_to_file_with_hash, tmp_path,
-};
+use crate::store::{conditional_sync_dir, conditional_sync_file};
+use common::file_utils::{blob_path, file_exists, file_hash, stream_to_file_with_hash, tmp_path};
 use common::key_utils::Key;
 use common::schemas::{BlobHead, ListResponse, PutResponse, SweepTmpQuery, SweepTmpResponse};
 use common::{
@@ -106,7 +105,7 @@ pub async fn write_handler(
 
     // Stream to temp file, get size and etag
     let (size, etag) = stream_to_file_with_hash(body.into_data_stream(), &mut tmp_file).await?;
-    tmp_file.sync_all().await?; // make sure all buffered data is dumped onto disk (durable temp)
+    conditional_sync_file(&mut tmp_file, &ctx.durability_level).await?;
 
     // Build response headers
     let resp = PutResponse { etag, size };
@@ -245,7 +244,7 @@ pub async fn commit_handler(
     fs::create_dir_all(final_dir).await?;
     fs::rename(&tmp_path, &final_path).await?;
 
-    fsync_dir(final_dir).await?;
+    conditional_sync_dir(final_dir, &ctx.durability_level).await?;
 
     Ok(StatusCode::OK)
 }

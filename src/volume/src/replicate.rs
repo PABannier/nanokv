@@ -5,7 +5,7 @@ use tokio::fs::File;
 use common::error::ApiError;
 use common::file_utils::stream_to_file_with_hash;
 
-use crate::state::VolumeState;
+use crate::state::{DurabilityLevel, VolumeState};
 
 #[derive(Deserialize, Debug)]
 pub struct PullRequest {
@@ -41,7 +41,16 @@ pub async fn pull_from_head(
 
     let stream = resp.bytes_stream();
     let (size, etag) = stream_to_file_with_hash(stream, tmp_file).await?;
-    tmp_file.sync_all().await?; // make sure all buffered data is dumped onto disk (durable temp)
+
+    // Conditional sync based on durability level
+    match ctx.durability_level {
+        DurabilityLevel::Immediate => {
+            tmp_file.sync_all().await?;
+        }
+        DurabilityLevel::OS => {
+            // Skip sync, rely on OS
+        }
+    }
 
     Ok((size, etag))
 }

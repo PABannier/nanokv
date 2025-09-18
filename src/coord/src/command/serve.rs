@@ -149,11 +149,6 @@ fn init_state(args: ServeArgs, db: KvDb, nodes: HashMap<String, NodeRuntime>) ->
     let http_client = reqwest::Client::builder()
         .pool_max_idle_per_host(8) // Max idle connections per host
         .pool_idle_timeout(Duration::from_secs(60)) // Keep connections alive
-        // HTTP/2 optimizations
-        .http2_prior_knowledge() // Use HTTP/2 if available
-        .http2_keep_alive_interval(Duration::from_secs(30))
-        .http2_keep_alive_timeout(Duration::from_secs(10))
-        .http2_keep_alive_while_idle(true)
         // TCP settings
         .tcp_keepalive(Duration::from_secs(30))
         .tcp_nodelay(true) // Disable Nagle's algorithm for low latency

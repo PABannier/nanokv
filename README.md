@@ -66,8 +66,8 @@ this is what I get:
 Host: M1 Pro · 16 GB · NVMe · MacOS 14.6.1 · Rust 1.89.0
 Cluster: 1 coord + 3 volumes (loopback), replicas=3, size=1 MiB, VUs=16, Dur=45s
 
-PUT:  p50 547 ms · p95 737 ms · p99  1.3 s
-GET:  p50   4 ms · p95  11 ms · p99  26 ms
+PUT:  p50 175 ms · p90 195 ms · p95 202 ms
+GET:  p50   7 ms · p90  17 ms · p95  19 ms
 ```
 
 ## Architecture at a glance

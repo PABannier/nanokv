@@ -28,7 +28,7 @@ use coord::core::routes::{
 use coord::core::state::CoordinatorState;
 use volume::health::heartbeat_loop;
 use volume::routes;
-use volume::state::VolumeState;
+use volume::state::{DurabilityLevel, VolumeState};
 use volume::store::disk_usage;
 
 pub struct TestServer {
@@ -194,6 +194,7 @@ impl TestVolume {
             heartbeat_interval_secs: 1,
             http_timeout_secs: 10,
             fault_injector: Arc::new(volume::fault_injection::FaultInjector::new()),
+            durability_level: DurabilityLevel::OS,
         };
 
         // For Phase 2, volumes need the full set of internal endpoints

@@ -192,11 +192,8 @@ pub mod write {
         body: Body,
         upload_id: &str,
     ) -> Result<(u64, String), ApiError> {
-        let stream = body
-            .into_data_stream()
-            .map_err(|e| ApiError::Any(anyhow!("failed to stream to node: {}", e)));
-
-        let upstream_body = reqwest::Body::wrap_stream(stream);
+        let upstream_body =
+            reqwest::Body::wrap_stream(body.into_data_stream().map_err(std::io::Error::other));
 
         let volume_url = format!("{}/internal/write/{}", head.internal_url, upload_id);
         let req = common::trace_middleware::inject_trace_context_reqwest(http.put(&volume_url));

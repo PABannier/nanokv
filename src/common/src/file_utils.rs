@@ -85,6 +85,10 @@ where
     let mut hasher = blake3::Hasher::new();
     let mut total: u64 = 0;
 
+    // Use a larger buffer for better performance
+    const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
+    let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+
     while let Some(next) = stream.next().await {
         let chunk: Bytes = next.map_err(|e| {
             error!("stream error: {e}");
@@ -96,9 +100,23 @@ where
             .ok_or(ApiError::TooLarge)?;
 
         hasher.update(&chunk);
-        file.write_all(&chunk).await?;
+
+        // Buffer chunks to reduce write syscalls
+        buffer.extend_from_slice(&chunk);
+
+        // Write buffer when it's full or chunk is large
+        if buffer.len() >= BUFFER_SIZE || chunk.len() >= BUFFER_SIZE / 2 {
+            file.write_all(&buffer).await?;
+            buffer.clear();
+        }
     }
 
+    // Write remaining buffered data
+    if !buffer.is_empty() {
+        file.write_all(&buffer).await?;
+    }
+
+    // Single flush at the end instead of per-chunk
     file.flush().await?;
 
     let etag = hasher.finalize().to_hex().to_string();
