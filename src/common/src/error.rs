@@ -1,4 +1,5 @@
 use axum::{
+    http::HeaderMap,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -31,6 +32,11 @@ pub enum ApiError {
     NoReplicasAvailable,
     #[error("checksum mismatch")]
     ChecksumMismatch,
+    #[error("service unavailable")]
+    ServiceUnavailable {
+        retry_after: Option<u32>,
+        message: String,
+    },
     // #[error("not enough storage on disk")]
     // InsufficientStorage,
     #[error("payload too large")]
@@ -59,6 +65,19 @@ impl IntoResponse for ApiError {
             ApiError::NoQuorum => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::NoReplicasAvailable => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::ChecksumMismatch => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::ServiceUnavailable {
+                retry_after,
+                message,
+            } => {
+                let mut headers = HeaderMap::new();
+                if let Some(seconds) = retry_after {
+                    headers.insert("Retry-After", seconds.to_string().parse().unwrap());
+                }
+                let mut response =
+                    (StatusCode::SERVICE_UNAVAILABLE, message.clone()).into_response();
+                *response.headers_mut() = headers;
+                return response;
+            }
             // ApiError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
             ApiError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             ApiError::UnknownNode => StatusCode::NOT_FOUND,
