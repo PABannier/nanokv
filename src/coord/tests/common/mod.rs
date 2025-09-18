@@ -90,6 +90,7 @@ impl TestCoordinator {
             nodes: Arc::new(RwLock::new(HashMap::new())),
             db,
             max_size: 1024 * 1024 * 1024, // 1GB
+            per_node_timeout: 10,
             hb_alive_secs: alive_ms / 1000,
             hb_down_secs: down_ms / 1000,
             node_status_sweep_secs: sweep_ms / 1000,

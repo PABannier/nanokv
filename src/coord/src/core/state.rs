@@ -17,6 +17,9 @@ pub struct CoordinatorState {
     // Per-node transfer inflight
     pub per_node_inflight: Arc<RwLock<HashMap<String, Arc<Semaphore>>>>,
 
+    // Maximum timeout to acquire a per-node inflight permit
+    pub per_node_timeout: u64,
+
     pub max_size: u64,
     pub db: KvDb,
     pub nodes: Arc<RwLock<HashMap<String, NodeRuntime>>>,
