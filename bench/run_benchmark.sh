@@ -224,7 +224,6 @@ start_coordinator() {
         --index "$COORD_DATA_DIR/index" \
         --listen "127.0.0.1:$COORD_PORT" \
         --n-replicas "$REPLICAS" \
-        --max-inflight 8 \
         --hb-alive-secs 5 \
         --hb-down-secs 20 \
         --node-status-sweep-secs 1 \

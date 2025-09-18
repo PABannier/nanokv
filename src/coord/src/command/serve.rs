@@ -40,8 +40,20 @@ pub struct ServeArgs {
     listen: String,
 
     /// Max concurrent uploads
-    #[arg(long, default_value_t = 4)]
-    max_inflight: usize,
+    #[arg(long, default_value_t = 1024)]
+    max_control_inflight: usize,
+
+    /// Max concurrent objects
+    #[arg(long, default_value_t = 16)]
+    max_data_inflight: usize,
+
+    /// Max concurrent transfers per node
+    #[arg(long, default_value_t = 2)]
+    max_per_node_inflight: usize,
+
+    /// Maximum timeout to acquire a per-node inflight permit (seconds)
+    #[arg(long, default_value_t = 2)]
+    per_node_timeout: u64,
 
     /// Max allowed object size in bytes (default: 1 GB)
     #[arg(long, default_value_t = 1024 * 1024 * 1024u64)]
@@ -73,27 +85,19 @@ pub struct ServeArgs {
 }
 
 pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
+    let listen = serve_args.listen.clone();
+    let node_status_sweep_secs = serve_args.node_status_sweep_secs;
+
     let db = KvDb::open(&serve_args.index)?;
 
     let nodes = read_node_infos_from_db(&db)?;
-
-    let state = CoordinatorState {
-        http_client: reqwest::Client::new(),
-        inflight: Arc::new(Semaphore::new(serve_args.max_inflight)),
-        nodes: Arc::new(RwLock::new(nodes)),
-        db,
-        n_replicas: serve_args.n_replicas,
-        max_size: serve_args.max_size,
-        hb_alive_secs: serve_args.hb_alive_secs,
-        hb_down_secs: serve_args.hb_down_secs,
-        node_status_sweep_secs: serve_args.node_status_sweep_secs,
-    };
+    let state = init_state(serve_args, db, nodes);
 
     // Spawn node status sweeper
     let (shutdown_tx, shutdown_rx) = watch::channel::<bool>(false);
     let sweeper_handle = tokio::spawn(node_status_sweeper(
         state.clone(),
-        Duration::from_secs(serve_args.node_status_sweep_secs),
+        Duration::from_secs(node_status_sweep_secs),
         shutdown_rx,
     ));
 
@@ -113,10 +117,10 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
         .layer(middleware::from_fn(trace_context_middleware))
         .with_state(state.clone());
 
-    let socket_addr = parse_socket_addr(&serve_args.listen)?;
+    let socket_addr = parse_socket_addr(&listen)?;
     let server = Server::bind(socket_addr).serve(app.into_make_service());
 
-    info!("listening on {}", serve_args.listen);
+    info!("listening on {}", listen);
 
     // Graceful shutdown: ctrl+c
     tokio::select! {
@@ -129,6 +133,53 @@ pub async fn serve(serve_args: ServeArgs) -> anyhow::Result<()> {
     let _ = sweeper_handle.await;
 
     Ok(())
+}
+
+fn init_state(args: ServeArgs, db: KvDb, nodes: HashMap<String, NodeRuntime>) -> CoordinatorState {
+    let per_node_inflight = nodes
+        .values()
+        .map(|node| {
+            (
+                node.info.node_id.clone(),
+                Arc::new(Semaphore::new(args.max_per_node_inflight)),
+            )
+        })
+        .collect::<HashMap<String, Arc<Semaphore>>>();
+
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(8) // Max idle connections per host
+        .pool_idle_timeout(Duration::from_secs(60)) // Keep connections alive
+        // HTTP/2 optimizations
+        .http2_prior_knowledge() // Use HTTP/2 if available
+        .http2_keep_alive_interval(Duration::from_secs(30))
+        .http2_keep_alive_timeout(Duration::from_secs(10))
+        .http2_keep_alive_while_idle(true)
+        // TCP settings
+        .tcp_keepalive(Duration::from_secs(30))
+        .tcp_nodelay(true) // Disable Nagle's algorithm for low latency
+        // Timeouts (per-operation timeouts are set in retry logic)
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(300)) // Overall request timeout (for large uploads)
+        .build()
+        .unwrap();
+
+    CoordinatorState {
+        http_client,
+        control_inflight: Arc::new(Semaphore::new(args.max_control_inflight)),
+        data_inflight: Arc::new(Semaphore::new(args.max_data_inflight)),
+        per_node_inflight: Arc::new(RwLock::new(per_node_inflight)),
+        nodes: Arc::new(RwLock::new(nodes)),
+        db,
+        n_replicas: args.n_replicas,
+        max_size: args.max_size,
+        per_node_timeout: args.per_node_timeout,
+        hb_alive_secs: args.hb_alive_secs,
+        hb_down_secs: args.hb_down_secs,
+        node_status_sweep_secs: args.node_status_sweep_secs,
+        max_control_inflight: args.max_control_inflight,
+        max_data_inflight: args.max_data_inflight,
+        max_per_node_inflight: args.max_per_node_inflight,
+    }
 }
 
 fn read_node_infos_from_db(db: &KvDb) -> anyhow::Result<HashMap<String, NodeRuntime>> {

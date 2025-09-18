@@ -70,7 +70,7 @@ pub mod meta {
 
         let meta = Meta::pending(upload_id.clone(), replica_ids);
 
-        db.put(meta_key, &meta)?;
+        db.put_pending(meta_key, &meta)?;
 
         Ok(upload_id)
     }

@@ -6,7 +6,10 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::future::try_join_all;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Semaphore;
+use tokio::time::{Duration, timeout};
 use tracing::Instrument;
 
 use common::constants::NODE_KEY_PREFIX;
@@ -38,6 +41,9 @@ pub async fn put_object(
     let key_enc = key.enc();
     let meta_key = meta_key_for(key_enc);
 
+    // Control plane work (placement, meta, prepare)
+    let control_plane_permit = ctx.control_inflight.acquire().await.unwrap();
+
     // Sanity checks
     {
         let _sanity_check = tracing::info_span!("sanity_check").entered();
@@ -64,9 +70,6 @@ pub async fn put_object(
         return Err(ApiError::NoQuorum);
     }
 
-    // Declare an inflight upload
-    let _permit = ctx.inflight.acquire().await.unwrap();
-
     // Write pending transaction in DB
     let _write_pending_meta = tracing::info_span!("write_pending_meta").entered();
     let upload_id = meta::write_pending_meta(&ctx.db, &meta_key, &replicas)?;
@@ -80,11 +83,84 @@ pub async fn put_object(
         .instrument(tracing::info_span!("prepare"))
         .await?;
 
+    drop(control_plane_permit); // Release control plane permit
+
+    // Acquire data inflight permit (alive for the entire duration of the data moving part)
+    let data_permit = ctx.data_inflight.acquire().await.unwrap();
+
     // Write to the head node (single-shot; long timeout). If this fails, abort.
     let head = replicas.first().unwrap();
-    let (size, etag) = write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id)
-        .instrument(tracing::info_span!("write_to_head"))
-        .await?;
+
+    let head_semaphore = ctx
+        .per_node_inflight
+        .read()
+        .unwrap()
+        .get(&head.node_id)
+        .ok_or(ApiError::Any(anyhow!(
+            "node {} not found in per_node_inflight",
+            head.node_id
+        )))?
+        .clone();
+
+    let head_permit = head_semaphore
+        .acquire_owned()
+        .await
+        .map_err(|e| ApiError::Any(anyhow!("failed to acquire per-node inflight permit: {}", e)))?;
+
+    let (size, etag) = {
+        let span = tracing::info_span!("write_to_head",
+            node_id = %head.node_id,
+            node_url = %head.internal_url
+        );
+        write::write_to_head_single_shot(&ctx.http_client, head, body, &upload_id)
+            .instrument(span)
+            .await?
+    };
+
+    drop(head_permit);
+
+    // Acquire per-node inflight permits for all replicas
+    let per_node_permits = {
+        let _queued_span = tracing::info_span!("queued_per_node_all").entered();
+
+        // Sort replicas by node_id for deterministic acquisition order (prevents deadlocks)
+        let mut sorted_replicas = replicas.clone();
+        sorted_replicas.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+
+        let per_node_timeout = Duration::from_secs(ctx.per_node_timeout);
+
+        let futures: Result<Vec<_>, ApiError> = {
+            let per_node_inflight = ctx.per_node_inflight.read().unwrap();
+            sorted_replicas
+                .iter()
+                .map(|r| {
+                    let semaphore = per_node_inflight
+                        .get(&r.node_id)
+                        .ok_or_else(|| {
+                            ApiError::Any(anyhow!(
+                                "node {} not found in per_node_inflight",
+                                r.node_id
+                            ))
+                        })?
+                        .clone();
+
+                    // Wrap each acquisition in a timeout
+                    Ok(async move {
+                        timeout(per_node_timeout, semaphore.acquire_owned())
+                            .await
+                            .map_err(|_| ApiError::ServiceUnavailable {
+                                retry_after: Some(5),
+                                message: format!("Timeout acquiring permit for node {}", r.node_id),
+                            })
+                    })
+                })
+                .collect()
+        };
+
+        drop(_queued_span); // Drop span before await
+
+        try_join_all(futures?).await?
+    };
 
     // Pull all from head with a retry
     pull::retry_pull_all(
@@ -98,10 +174,17 @@ pub async fn put_object(
     .instrument(tracing::info_span!("pull"))
     .await?;
 
+    for permit in per_node_permits {
+        drop(permit);
+    }
+    drop(data_permit);
+
     // At this point, all replicas have the data in temporary files. We can disarm the
     // guard. If the commit fails, a verify or clean operation will clean up the temporary
     // files.
     guard.disarm();
+
+    let commit_permit = ctx.control_inflight.acquire().await.unwrap();
 
     // Commit
     commit::retry_commit_all(&ctx.http_client, &replicas, &upload_id, key_enc)
@@ -110,6 +193,8 @@ pub async fn put_object(
 
     // Write committed transaction in DB
     meta::write_committed_meta(&ctx.db, &meta_key, size, etag.clone(), &replicas)?;
+
+    drop(commit_permit);
 
     // Build response headers
     let mut resp_headers = HeaderMap::new();
@@ -306,6 +391,7 @@ pub async fn join_node(
         status: NodeStatus::Alive,
         version: req.version,
     };
+
     let runtime = NodeRuntime {
         info: node_info.clone(),
         last_seen: Instant::now(),
@@ -313,7 +399,13 @@ pub async fn join_node(
 
     ctx.db
         .put(&format!("{}:{}", NODE_KEY_PREFIX, req.node_id), &node_info)?;
-    nodes.insert(req.node_id, runtime);
+
+    nodes.insert(req.node_id.clone(), runtime);
+
+    ctx.per_node_inflight.write().unwrap().insert(
+        req.node_id,
+        Arc::new(Semaphore::new(ctx.max_per_node_inflight)),
+    );
 
     Ok(StatusCode::OK)
 }
