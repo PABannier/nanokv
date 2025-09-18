@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct JoinRequest {
     pub node_id: String,
     pub public_url: String,
@@ -11,7 +11,7 @@ pub struct JoinRequest {
     pub version: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct HeartbeatRequest {
     pub node_id: String,
     pub used_bytes: Option<u64>,
@@ -37,7 +37,7 @@ pub struct BlobHead {
     pub etag: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SweepTmpQuery {
     // Delete tmp files older than this many seconds
     pub sweep_age_secs: Option<u64>,

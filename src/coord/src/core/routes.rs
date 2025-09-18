@@ -211,6 +211,7 @@ pub async fn put_object(
 }
 
 // GET /:key
+#[tracing::instrument(name="coord.get", skip(ctx), fields(key = raw_key))]
 pub async fn get_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
@@ -267,6 +268,7 @@ async fn delete_object_on_volume(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[tracing::instrument(name="coord.delete", skip(ctx), fields(key = raw_key))]
 pub async fn delete_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
@@ -314,6 +316,7 @@ pub async fn delete_object(
 }
 
 // HEAD /:key
+#[tracing::instrument(name="coord.head", skip(ctx), fields(key = raw_key))]
 pub async fn head_object(
     Path(raw_key): Path<String>,
     State(ctx): State<CoordinatorState>,
@@ -346,6 +349,7 @@ pub async fn head_object(
 }
 
 // GET /admin/nodes
+#[tracing::instrument(name="coord.admin.list_nodes", skip(ctx))]
 pub async fn list_nodes(
     State(ctx): State<CoordinatorState>,
 ) -> Result<(StatusCode, impl IntoResponse), ApiError> {
@@ -361,6 +365,7 @@ pub async fn list_nodes(
 }
 
 // POST /admin/join
+#[tracing::instrument(name="coord.admin.join_node", skip(ctx), fields(node_id = %req.node_id, public_url = %req.public_url, internal_url = %req.internal_url))]
 pub async fn join_node(
     State(ctx): State<CoordinatorState>,
     Json(req): Json<JoinRequest>,
@@ -411,6 +416,7 @@ pub async fn join_node(
 }
 
 // POST /admin/heartbeat
+#[tracing::instrument(name="coord.admin.heartbeat", skip(ctx), fields(node_id = %req.node_id))]
 pub async fn heartbeat(
     State(ctx): State<CoordinatorState>,
     Json(req): Json<HeartbeatRequest>,

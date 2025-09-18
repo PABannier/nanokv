@@ -114,6 +114,7 @@ pub async fn write_handler(
 }
 
 // GET /read/:upload_id (head only)
+#[tracing::instrument(name="volume.read", skip(ctx), fields(upload_id = %upload_id))]
 pub async fn read_handler(
     Path(upload_id): Path<String>,
     State(ctx): State<VolumeState>,
@@ -255,6 +256,7 @@ pub struct AbortRequest {
     pub upload_id: String,
 }
 
+#[tracing::instrument(name="volume.abort", skip(ctx), fields(upload_id = %req.upload_id))]
 pub async fn abort_handler(
     Query(req): Query<AbortRequest>,
     State(ctx): State<VolumeState>,
@@ -270,6 +272,7 @@ pub async fn abort_handler(
 }
 
 // GET /blobs/:key
+#[tracing::instrument(name="volume.get", skip(ctx), fields(key = raw_key))]
 pub async fn get_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>,
@@ -289,6 +292,7 @@ pub async fn get_handler(
 }
 
 // DELETE /:key
+#[tracing::instrument(name="volume.delete", skip(ctx), fields(key = raw_key))]
 pub async fn delete_handler(
     Path(raw_key): Path<String>,
     State(ctx): State<VolumeState>,
@@ -302,7 +306,7 @@ pub async fn delete_handler(
 }
 
 // GET /admin/list?limit=?after=?
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ListRequest {
     pub limit: Option<usize>,
     pub after: Option<String>, // percent-encoded cursor (exclusive)
@@ -311,6 +315,7 @@ pub struct ListRequest {
 const DEFAULT_PAGE_LIMIT: usize = 1000;
 const MAX_PAGE_LIMIT: usize = 5000;
 
+#[tracing::instrument(name="volume.admin.list", skip(ctx), fields(limit = req.limit, after = req.after))]
 pub async fn admin_list_handler(
     State(ctx): State<VolumeState>,
     Query(req): Query<ListRequest>,
@@ -354,12 +359,13 @@ pub async fn admin_list_handler(
 }
 
 // GET /admin/blob?key=...&deep=...
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct BlobRequest {
     key: String,
     deep: Option<bool>,
 }
 
+#[tracing::instrument(name="volume.admin.blob", skip(ctx), fields(key = %req.key, deep = req.deep))]
 pub async fn admin_blob_handler(
     State(ctx): State<VolumeState>,
     Query(req): Query<BlobRequest>,
@@ -393,6 +399,7 @@ pub async fn admin_blob_handler(
 }
 
 // POST /admin/sweep-tmp?sweep_age_secs=
+#[tracing::instrument(name="volume.admin.sweep_tmp", skip(ctx), fields(sweep_age_secs = req.sweep_age_secs))]
 pub async fn admin_sweep_tmp_handler(
     State(ctx): State<VolumeState>,
     Query(req): Query<SweepTmpQuery>,
