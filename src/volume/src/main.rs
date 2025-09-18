@@ -24,7 +24,7 @@ use volume::routes::{
     abort_handler, admin_blob_handler, admin_list_handler, admin_sweep_tmp_handler, commit_handler,
     delete_handler, get_handler, prepare_handler, pull_handler, read_handler, write_handler,
 };
-use volume::state::VolumeState;
+use volume::state::{DurabilityLevel, VolumeState};
 use volume::store::disk_usage;
 
 #[derive(Parser, Debug, Clone)]
@@ -56,9 +56,11 @@ async fn main() -> anyhow::Result<()> {
     init_dirs(&args.data).await?;
 
     let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(64) // Increased for higher throughput
         .pool_idle_timeout(Duration::from_secs(30))
+        // TCP settings optimized for throughput
         .tcp_keepalive(Duration::from_secs(30))
-        .http2_adaptive_window(true)
+        .tcp_nodelay(true) // Disable Nagle's algorithm for low latency
         .timeout(Duration::from_secs(args.http_timeout_secs))
         .build()?;
 
@@ -73,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         heartbeat_interval_secs: args.heartbeat_interval_secs,
         http_timeout_secs: args.http_timeout_secs,
         fault_injector: Arc::new(FaultInjector::new()),
+        durability_level: DurabilityLevel::OS, // Use OS durability for performance testing
     };
 
     join_cluster(&state).await?;
